@@ -16,31 +16,80 @@ use Traversable;
  */
 class Collection implements IteratorAggregate
 {
+
 	/**
-	 * @var Iterator<TKey, TValue>|array<TKey, TValue>
+	 * @var Iterator<TKey, TValue>|ArrayIterator|array<TKey, TValue>
 	 */
-	private Iterator|array $items;
+	protected Iterator|array|ArrayIterator $collection;
 
 
 	/**
-	 * @param  Iterator<TKey, TValue>|array<TKey, TValue>  $items
+	 * @param  Iterator<TKey, TValue>|array<TKey, TValue>  $collection
 	 */
-	public function __construct(Iterator|array $items = [])
+	public function __construct(Iterator|array $collection = [])
 	{
-		$this->items = $items;
+		$this->collection = $collection;
 	}
 
+
+	/**
+	 * @param  Iterator<TKey, TValue>|array<TKey, TValue>  $collection
+	 *
+	 * @return void
+	 */
+	public function addIterator(Iterator|array $collection = []): void
+	{
+		$this->collection = $collection;
+	}
+
+
+	/**
+	 * @return void
+	 */
+	public function current(): void
+	{
+		if($this->collection instanceof Iterator) {
+			$this->collection->current();
+		}
+	}
+
+	/**
+	 * @param  mixed  $key
+	 * @param  mixed  $value
+	 *
+	 * @return void
+	 */
+	public function setAttribute(mixed $key, mixed $value): void
+	{
+		if(is_array($this->collection)) {
+			$this->collection[$key] = $value;
+		}
+	}
+
+	/**
+	 * @param  mixed  $key
+	 *
+	 * @return mixed
+	 */
+	public function getAttribute(mixed $key): mixed
+	{
+		if(is_array($this->collection)) {
+			return $this->collection[$key];
+		}
+
+		return null;
+	}
 
 	/**
 	 * @return Traversable<TKey, TValue>
 	 */
 	public function getIterator(): Traversable
 	{
-		if(!$this->items instanceof Traversable) {
-			$this->items = $this->arrayToGenerator($this->items);
+		if(!$this->collection instanceof Traversable) {
+			$this->collection = $this->arrayToGenerator($this->collection);
 		}
 
-		return $this->items;
+		return $this->collection;
 	}
 
 	/**
@@ -52,12 +101,12 @@ class Collection implements IteratorAggregate
 	 */
 	public function map(callable $callback): Collection
 	{
-		$newItems = [];
+		$newcollection = [];
 		foreach($this->getIterator() as $item) {
-			$newItems[] = $callback($item);
+			$newcollection[] = $callback($item);
 		}
 
-		return new self($newItems);
+		return new self($newcollection);
 	}
 
 	/**
@@ -67,14 +116,14 @@ class Collection implements IteratorAggregate
 	 */
 	public function filter(callable $callback): Collection
 	{
-		$newItems = [];
+		$newcollection = [];
 		foreach($this->getIterator() as $item) {
 			if($callback($item)) {
-				$newItems[] = $item;
+				$newcollection[] = $item;
 			}
 		}
 
-		return new self($newItems);
+		return new self($newcollection);
 	}
 
 
@@ -123,6 +172,38 @@ class Collection implements IteratorAggregate
 
 		return null;
 	}
+
+
+	/**
+	 * @param  mixed  $item
+	 *
+	 * @return void
+	 */
+	public function add(mixed $item): void
+	{
+		if($this->collection instanceof Iterator) {
+			$this->collection = iterator_to_array($this->collection, false);
+		}
+
+		$this->collection[] = $item;
+	}
+
+	/**
+	 * @param  mixed  $item
+	 *
+	 * @return void
+	 */
+	public function remove(mixed $item): void
+	{
+		if($this->collection instanceof Iterator) {
+			$this->collection = iterator_to_array($this->collection, false);
+		}
+
+		$this->collection = array_filter($this->collection, static function($currentItem) use ($item) {
+			return $currentItem !== $item;
+		});
+	}
+
 
 	/**
 	 * @param  list<mixed>  $array
