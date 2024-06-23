@@ -17,6 +17,10 @@ The Collection class provides the following methods:
 
 Collection Class
 - __construct(Iterator|array $items = []): Creates a new Collection instance, optionally initializing it with an array or an Iterator.
+- addIterator(Iterator|array $collection = []): Adds a new Iterator or array to the existing collection.
+- current(): returns the current element of the Iterator (it is a collection for an Iterator).
+- setAttribute(mixed $key, mixed $value): Sets an attribute in the collection (if it is an array).
+- getAttribute(mixed $key): Gets an attribute from the collection (if it is an array).
 - getIterator(): Traversable: Returns an iterator for the collection, allowing iteration over its items.
 - map(callable $callback): Collection: Applies a callback function to each item in the collection and returns a new Collection with the transformed items.
 - filter(callable $callback): Collection: Filters the collection based on a given callback function, returning a new Collection with only the items that satisfy the condition.
@@ -51,6 +55,7 @@ foreach ($collection as $item) {
 }
 
 // Map the collection
+$collection->addIterator(new ArrayIterator([6, 7, 8]));
 $squaredNumbers = $collection->map(function ($item) {
     return $item * $item;
 });
