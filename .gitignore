@@ -1,0 +1,8 @@
+/vendor/
+.idea/
+.env
+phpunit.xml
+phpstan.neon
+composer.lock
+!/vendor/phpunit/
+!/.env

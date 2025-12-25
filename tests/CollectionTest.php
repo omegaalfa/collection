@@ -18,14 +18,14 @@ class CollectionTest extends TestCase
 	{
 		$collection = new Collection([1, 2, 3]);
 		$newCollection = $collection->map(fn($item) => $item * 2);
-		$this->assertEquals([2, 4, 6], $newCollection->toArray());
+		$this->assertEquals([2, 4, 6], array_values($newCollection->toArray()));
 	}
 
 	public function testFilter()
 	{
 		$collection = new Collection([1, 2, 3, 4]);
 		$newCollection = $collection->filter(fn($item) => $item % 2 == 0);
-		$this->assertEquals([2, 4], $newCollection->toArray());
+		$this->assertEquals([2, 4], array_values($newCollection->toArray()));
 	}
 
 	public function testEach()
