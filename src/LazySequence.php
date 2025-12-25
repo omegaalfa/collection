@@ -12,581 +12,581 @@ use Traversable;
 /**
  * Lazy evaluated sequence - operations are deferred until materialization
  * Perfect for large collections, pipelines with take/first, and infinite sequences
- * 
+ *
  * @template T
  * @implements IteratorAggregate<int, T>
  */
 class LazySequence implements IteratorAggregate, Countable
 {
-	/**
-	 * @var list<array{type: string, fn?: callable, arg?: mixed}>
-	 */
-	private readonly array $operations;
+    /**
+     * @var list<array{type: string, fn?: callable, arg?: mixed}>
+     */
+    private readonly array $operations;
 
-	/**
-	 * @var iterable<T>|null
-	 */
-	private readonly ?iterable $source;
+    /**
+     * @var iterable<T>|null
+     */
+    private readonly ?iterable $source;
 
-	/**
-	 * @param iterable<T>|null $source
-	 * @param list<array{type: string, fn?: callable, arg?: mixed}> $operations
-	 */
-	private function __construct(?iterable $source = null, array $operations = [])
-	{
-		$this->source = $source;
-		$this->operations = $operations;
-	}
+    /**
+     * @param iterable<T>|null $source
+     * @param list<array{type: string, fn?: callable, arg?: mixed}> $operations
+     */
+    private function __construct(?iterable $source = null, array $operations = [])
+    {
+        $this->source = $source;
+        $this->operations = $operations;
+    }
 
-	/**
-	 * Create empty lazy sequence
-	 * 
-	 * @return self<never>
-	 */
-	public static function empty(): self
-	{
-		return new self([]);
-	}
+    /**
+     * Create empty lazy sequence
+     *
+     * @return self<never>
+     */
+    public static function empty(): self
+    {
+        return new self([]);
+    }
 
-	/**
-	 * Create lazy sequence from values
-	 * 
-	 * @template TValue
-	 * @param TValue ...$values
-	 * @return self<TValue>
-	 */
-	public static function of(mixed ...$values): self
-	{
-		return new self($values);
-	}
+    /**
+     * Create lazy sequence from values
+     *
+     * @template TValue
+     * @param TValue ...$values
+     * @return self<TValue>
+     */
+    public static function of(mixed ...$values): self
+    {
+        return new self($values);
+    }
 
-	/**
-	 * Create lazy sequence from iterable
-	 * 
-	 * @template TValue
-	 * @param iterable<TValue> $iterable
-	 * @return self<TValue>
-	 */
-	public static function from(iterable $iterable): self
-	{
-		return new self($iterable);
-	}
+    /**
+     * Create lazy range sequence
+     *
+     * @param int $start
+     * @param int $end
+     * @param int $step
+     * @return self<int>
+     */
+    public static function range(int $start, int $end, int $step = 1): self
+    {
+        return new self(null, [['type' => 'range', 'arg' => [$start, $end, $step]]]);
+    }
 
-	/**
-	 * Create lazy range sequence
-	 * 
-	 * @param int $start
-	 * @param int $end
-	 * @param int $step
-	 * @return self<int>
-	 */
-	public static function range(int $start, int $end, int $step = 1): self
-	{
-		return new self(null, [['type' => 'range', 'arg' => [$start, $end, $step]]]);
-	}
+    /**
+     * Lazy map - transformation deferred until iteration
+     *
+     * @template TNew
+     * @param callable(T, int): TNew $fn
+     * @return self<TNew>
+     */
+    public function map(callable $fn): self
+    {
+        return new self($this->source, [...$this->operations, ['type' => 'map', 'fn' => $fn]]);
+    }
 
-	/**
-	 * Lazy map - transformation deferred until iteration
-	 * 
-	 * @template TNew
-	 * @param callable(T, int): TNew $fn
-	 * @return self<TNew>
-	 */
-	public function map(callable $fn): self
-	{
-		return new self($this->source, [...$this->operations, ['type' => 'map', 'fn' => $fn]]);
-	}
+    /**
+     * Lazy filter - filtering deferred until iteration
+     *
+     * @param callable(T, int): bool $fn
+     * @return self<T>
+     */
+    public function filter(callable $fn): self
+    {
+        return new self($this->source, [...$this->operations, ['type' => 'filter', 'fn' => $fn]]);
+    }
 
-	/**
-	 * Lazy filter - filtering deferred until iteration
-	 * 
-	 * @param callable(T, int): bool $fn
-	 * @return self<T>
-	 */
-	public function filter(callable $fn): self
-	{
-		return new self($this->source, [...$this->operations, ['type' => 'filter', 'fn' => $fn]]);
-	}
+    /**
+     * Lazy flat map
+     *
+     * @template TNew
+     * @param callable(T, int): iterable<TNew> $fn
+     * @return self<TNew>
+     */
+    public function flatMap(callable $fn): self
+    {
+        return new self($this->source, [...$this->operations, ['type' => 'flatMap', 'fn' => $fn]]);
+    }
 
-	/**
-	 * Lazy flat map
-	 * 
-	 * @template TNew
-	 * @param callable(T, int): iterable<TNew> $fn
-	 * @return self<TNew>
-	 */
-	public function flatMap(callable $fn): self
-	{
-		return new self($this->source, [...$this->operations, ['type' => 'flatMap', 'fn' => $fn]]);
-	}
+    /**
+     * Take first N elements (lazy - stops iteration early!)
+     *
+     * @param int $limit
+     * @return self<T>
+     */
+    public function take(int $limit): self
+    {
+        return new self($this->source, [...$this->operations, ['type' => 'take', 'arg' => $limit]]);
+    }
 
-	/**
-	 * Take first N elements (lazy - stops iteration early!)
-	 * 
-	 * @param int $limit
-	 * @return self<T>
-	 */
-	public function take(int $limit): self
-	{
-		return new self($this->source, [...$this->operations, ['type' => 'take', 'arg' => $limit]]);
-	}
+    /**
+     * Skip first N elements
+     *
+     * @param int $count
+     * @return self<T>
+     */
+    public function skip(int $count): self
+    {
+        return new self($this->source, [...$this->operations, ['type' => 'skip', 'arg' => $count]]);
+    }
 
-	/**
-	 * Skip first N elements
-	 * 
-	 * @param int $count
-	 * @return self<T>
-	 */
-	public function skip(int $count): self
-	{
-		return new self($this->source, [...$this->operations, ['type' => 'skip', 'arg' => $count]]);
-	}
+    /**
+     * Slice sequence
+     *
+     * @param int $offset
+     * @param int|null $length
+     * @return self<T>
+     */
+    public function slice(int $offset, ?int $length = null): self
+    {
+        return new self($this->source, [...$this->operations, ['type' => 'slice', 'arg' => [$offset, $length]]]);
+    }
 
-	/**
-	 * Slice sequence
-	 * 
-	 * @param int $offset
-	 * @param int|null $length
-	 * @return self<T>
-	 */
-	public function slice(int $offset, ?int $length = null): self
-	{
-		return new self($this->source, [...$this->operations, ['type' => 'slice', 'arg' => [$offset, $length]]]);
-	}
+    /**
+     * Remove duplicates (maintains insertion order)
+     *
+     * @return self<T>
+     */
+    public function unique(): self
+    {
+        return new self($this->source, [...$this->operations, ['type' => 'unique']]);
+    }
 
-	/**
-	 * Remove duplicates (maintains insertion order)
-	 * 
-	 * @return self<T>
-	 */
-	public function unique(): self
-	{
-		return new self($this->source, [...$this->operations, ['type' => 'unique']]);
-	}
+    /**
+     * Execute side effect for each element
+     *
+     * @param callable(T, int): void $fn
+     * @return self<T>
+     */
+    public function each(callable $fn): self
+    {
+        return new self($this->source, [...$this->operations, ['type' => 'each', 'fn' => $fn]]);
+    }
 
-	/**
-	 * Execute side effect for each element
-	 * 
-	 * @param callable(T, int): void $fn
-	 * @return self<T>
-	 */
-	public function each(callable $fn): self
-	{
-		return new self($this->source, [...$this->operations, ['type' => 'each', 'fn' => $fn]]);
-	}
+    /**
+     * Chunk into groups
+     *
+     * @param int $size
+     * @return self<Sequence<T>>
+     */
+    public function chunk(int $size): self
+    {
+        return new self($this->source, [...$this->operations, ['type' => 'chunk', 'arg' => $size]]);
+    }
 
-	/**
-	 * Chunk into groups
-	 * 
-	 * @param int $size
-	 * @return self<Sequence<T>>
-	 */
-	public function chunk(int $size): self
-	{
-		return new self($this->source, [...$this->operations, ['type' => 'chunk', 'arg' => $size]]);
-	}
+    /**
+     * Get first element (lazy - stops after finding one!)
+     *
+     * @return T|null
+     */
+    public function first(): mixed
+    {
+        foreach ($this->getIterator() as $value) {
+            return $value;
+        }
+        return null;
+    }
 
-	/**
-	 * Reduce to single value (forces evaluation!)
-	 * 
-	 * @template TReduce
-	 * @param callable(TReduce, T, int): TReduce $fn
-	 * @param TReduce $initial
-	 * @return TReduce
-	 */
-	public function reduce(callable $fn, mixed $initial = null): mixed
-	{
-		$carry = $initial;
-		$index = 0;
-		foreach ($this->getIterator() as $value) {
-			$carry = $fn($carry, $value, $index++);
-		}
-		return $carry;
-	}
+    /**
+     * Get lazy iterator - this is where magic happens!
+     *
+     * @return Traversable<int, T>
+     */
+    public function getIterator(): Traversable
+    {
+        return $this->buildPipeline();
+    }
 
-	/**
-	 * Get first element (lazy - stops after finding one!)
-	 * 
-	 * @return T|null
-	 */
-	public function first(): mixed
-	{
-		foreach ($this->getIterator() as $value) {
-			return $value;
-		}
-		return null;
-	}
+    /**
+     * Build and execute lazy pipeline
+     *
+     * @return Generator<int, T>
+     */
+    private function buildPipeline(): Generator
+    {
+        // Get source generator
+        $generator = $this->getSource();
 
-	/**
-	 * Get last element (forces full evaluation)
-	 * 
-	 * @return T|null
-	 */
-	public function last(): mixed
-	{
-		$last = null;
-		foreach ($this->getIterator() as $value) {
-			$last = $value;
-		}
-		return $last;
-	}
+        // Apply operations lazily
+        $index = 0;
+        $skipped = 0;
+        $taken = 0;
+        $seen = [];
+        $takeLimit = null;
+        $skipCount = 0;
+        $sliceOffset = null;
+        $sliceLength = null;
+        $chunkSize = null;
+        $currentChunk = [];
 
-	/**
-	 * Check if contains value (lazy - stops when found!)
-	 * 
-	 * @param T $value
-	 * @return bool
-	 */
-	public function contains(mixed $value): bool
-	{
-		foreach ($this->getIterator() as $item) {
-			if ($item === $value) {
-				return true;
-			}
-		}
-		return false;
-	}
+        foreach ($generator as $value) {
+            // Apply transformations
+            foreach ($this->operations as $op) {
+                if ($value === null && $op['type'] !== 'skip' && $op['type'] !== 'take') {
+                    continue 2; // Skip to next source item
+                }
 
-	/**
-	 * Check if any element matches predicate (lazy - short circuits!)
-	 * 
-	 * @param callable(T, int): bool $fn
-	 * @return bool
-	 */
-	public function any(callable $fn): bool
-	{
-		$index = 0;
-		foreach ($this->getIterator() as $value) {
-			if ($fn($value, $index++)) {
-				return true;
-			}
-		}
-		return false;
-	}
+                switch ($op['type']) {
+                    case 'map':
+                        $value = $op['fn']($value, $index);
+                        break;
 
-	/**
-	 * Check if all elements match predicate (lazy - short circuits!)
-	 * 
-	 * @param callable(T, int): bool $fn
-	 * @return bool
-	 */
-	public function all(callable $fn): bool
-	{
-		$index = 0;
-		foreach ($this->getIterator() as $value) {
-			if (!$fn($value, $index++)) {
-				return false;
-			}
-		}
-		return true;
-	}
+                    case 'filter':
+                        if (!$op['fn']($value, $index)) {
+                            continue 3; // Skip to next source item
+                        }
+                        break;
 
-	/**
-	 * Get element at index (requires full iteration up to index)
-	 * 
-	 * @param int $index
-	 * @return T|null
-	 */
-	public function at(int $index): mixed
-	{
-		$current = 0;
-		foreach ($this->getIterator() as $value) {
-			if ($current === $index) {
-				return $value;
-			}
-			$current++;
-		}
-		return null;
-	}
+                    case 'flatMap':
+                        foreach ($op['fn']($value, $index) as $flatValue) {
+                            yield $flatValue;
+                        }
+                        continue 3;
 
-	/**
-	 * Sum numeric values (forces evaluation)
-	 * 
-	 * @return int|float
-	 */
-	public function sum(): int|float
-	{
-		return $this->reduce(static fn($carry, $item) => $carry + (is_numeric($item) ? $item : 0), 0);
-	}
+                    case 'skip':
+                        $skipCount = $op['arg'];
+                        if ($skipped < $skipCount) {
+                            $skipped++;
+                            continue 3;
+                        }
+                        break;
 
-	/**
-	 * Average of numeric values (forces evaluation)
-	 * 
-	 * @return float|null
-	 */
-	public function avg(): ?float
-	{
-		$sum = 0;
-		$count = 0;
-		foreach ($this->getIterator() as $value) {
-			if (is_numeric($value)) {
-				$sum += $value;
-				$count++;
-			}
-		}
-		return $count > 0 ? $sum / $count : null;
-	}
+                    case 'take':
+                        $takeLimit = $op['arg'];
+                        if ($taken >= $takeLimit) {
+                            return; // Stop iteration
+                        }
+                        break;
 
-	/**
-	 * Minimum value (forces evaluation)
-	 * 
-	 * @return T|null
-	 */
-	public function min(): mixed
-	{
-		$min = null;
-		foreach ($this->getIterator() as $value) {
-			if ($min === null || $value < $min) {
-				$min = $value;
-			}
-		}
-		return $min;
-	}
+                    case 'slice':
+                        [$sliceOffset, $sliceLength] = $op['arg'];
+                        if ($index < $sliceOffset) {
+                            $index++;
+                            continue 3;
+                        }
+                        if ($sliceLength !== null && $index >= $sliceOffset + $sliceLength) {
+                            return;
+                        }
+                        break;
 
-	/**
-	 * Maximum value (forces evaluation)
-	 * 
-	 * @return T|null
-	 */
-	public function max(): mixed
-	{
-		$max = null;
-		foreach ($this->getIterator() as $value) {
-			if ($max === null || $value > $max) {
-				$max = $value;
-			}
-		}
-		return $max;
-	}
+                    case 'unique':
+                        $hash = serialize($value);
+                        if (in_array($hash, $seen, true)) {
+                            continue 3;
+                        }
+                        $seen[] = $hash;
+                        break;
 
-	/**
-	 * Count elements (forces evaluation!)
-	 * 
-	 * @return int
-	 */
-	public function count(): int
-	{
-		$count = 0;
-		foreach ($this->getIterator() as $_) {
-			$count++;
-		}
-		return $count;
-	}
+                    case 'each':
+                        $op['fn']($value, $index);
+                        break;
 
-	/**
-	 * Check if empty (lazy - only checks first element!)
-	 * 
-	 * @return bool
-	 */
-	public function isEmpty(): bool
-	{
-		foreach ($this->getIterator() as $_) {
-			return false;
-		}
-		return true;
-	}
+                    case 'chunk':
+                        $chunkSize = $op['arg'];
+                        $currentChunk[] = $value;
+                        if (count($currentChunk) === $chunkSize) {
+                            yield Sequence::from($currentChunk);
+                            $currentChunk = [];
+                        }
+                        continue 3;
+                }
+            }
 
-	/**
-	 * Join elements with separator (forces evaluation)
-	 * 
-	 * @param string $separator
-	 * @return string
-	 */
-	public function join(string $separator = ''): string
-	{
-		return implode($separator, $this->toArray());
-	}
+            // Yield transformed value
+            yield $value;
+            $index++;
+            $taken++;
 
-	/**
-	 * Convert to array (forces evaluation!)
-	 * 
-	 * @return list<T>
-	 */
-	public function toArray(): array
-	{
-		return iterator_to_array($this->getIterator(), false);
-	}
+            // Check take limit
+            if ($takeLimit !== null && $taken >= $takeLimit) {
+                return;
+            }
+        }
 
-	/**
-	 * Convert to eager Sequence (forces evaluation!)
-	 * 
-	 * @return Sequence<T>
-	 */
-	public function toEager(): Sequence
-	{
-		return Sequence::from($this->toArray());
-	}
+        // Yield remaining chunk
+        if ($chunkSize !== null && !empty($currentChunk)) {
+            yield Sequence::from($currentChunk);
+        }
+    }
 
-	/**
-	 * Convert to Map using key extractor
-	 * 
-	 * @template TKey of array-key
-	 * @param callable(T, int): TKey $keyFn
-	 * @return LazyMap<TKey, T>
-	 */
-	public function toMap(callable $keyFn): LazyMap
-	{
-		$map = [];
-		$index = 0;
-		foreach ($this->getIterator() as $value) {
-			$key = $keyFn($value, $index++);
-			$map[$key] = $value;
-		}
-		return LazyMap::from($map);
-	}
+    /**
+     * Get source generator
+     *
+     * @return Generator<int, T>
+     */
+    private function getSource(): Generator
+    {
+        // Handle range specially
+        foreach ($this->operations as $op) {
+            if ($op['type'] === 'range') {
+                [$start, $end, $step] = $op['arg'];
+                if ($step > 0) {
+                    for ($i = $start; $i <= $end; $i += $step) {
+                        yield $i;
+                    }
+                } else {
+                    for ($i = $start; $i >= $end; $i += $step) {
+                        yield $i;
+                    }
+                }
+                return;
+            }
+        }
 
-	/**
-	 * Get lazy iterator - this is where magic happens!
-	 * 
-	 * @return Traversable<int, T>
-	 */
-	public function getIterator(): Traversable
-	{
-		return $this->buildPipeline();
-	}
+        // Use provided source
+        if ($this->source !== null) {
+            $index = 0;
+            foreach ($this->source as $value) {
+                yield $index++ => $value;
+            }
+        }
+    }
 
-	/**
-	 * Build and execute lazy pipeline
-	 * 
-	 * @return Generator<int, T>
-	 */
-	private function buildPipeline(): Generator
-	{
-		// Get source generator
-		$generator = $this->getSource();
+    /**
+     * Create lazy sequence from iterable
+     *
+     * @template TValue
+     * @param iterable<TValue> $iterable
+     * @return self<TValue>
+     */
+    public static function from(iterable $iterable): self
+    {
+        return new self($iterable);
+    }
 
-		// Apply operations lazily
-		$index = 0;
-		$skipped = 0;
-		$taken = 0;
-		$seen = [];
-		$takeLimit = null;
-		$skipCount = 0;
-		$sliceOffset = null;
-		$sliceLength = null;
-		$chunkSize = null;
-		$currentChunk = [];
+    /**
+     * Get last element (forces full evaluation)
+     *
+     * @return T|null
+     */
+    public function last(): mixed
+    {
+        $last = null;
+        foreach ($this->getIterator() as $value) {
+            $last = $value;
+        }
+        return $last;
+    }
 
-		foreach ($generator as $value) {
-			// Apply transformations
-			foreach ($this->operations as $op) {
-				if ($value === null && $op['type'] !== 'skip' && $op['type'] !== 'take') {
-					continue 2; // Skip to next source item
-				}
+    /**
+     * Check if contains value (lazy - stops when found!)
+     *
+     * @param T $value
+     * @return bool
+     */
+    public function contains(mixed $value): bool
+    {
+        foreach ($this->getIterator() as $item) {
+            if ($item === $value) {
+                return true;
+            }
+        }
+        return false;
+    }
 
-				switch ($op['type']) {
-					case 'map':
-						$value = $op['fn']($value, $index);
-						break;
+    /**
+     * Check if any element matches predicate (lazy - short circuits!)
+     *
+     * @param callable(T, int): bool $fn
+     * @return bool
+     */
+    public function any(callable $fn): bool
+    {
+        $index = 0;
+        foreach ($this->getIterator() as $value) {
+            if ($fn($value, $index++)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
-					case 'filter':
-						if (!$op['fn']($value, $index)) {
-							continue 3; // Skip to next source item
-						}
-						break;
+    /**
+     * Check if all elements match predicate (lazy - short circuits!)
+     *
+     * @param callable(T, int): bool $fn
+     * @return bool
+     */
+    public function all(callable $fn): bool
+    {
+        $index = 0;
+        foreach ($this->getIterator() as $value) {
+            if (!$fn($value, $index++)) {
+                return false;
+            }
+        }
+        return true;
+    }
 
-					case 'flatMap':
-						foreach ($op['fn']($value, $index) as $flatValue) {
-							yield $flatValue;
-						}
-						continue 3;
+    /**
+     * Get element at index (requires full iteration up to index)
+     *
+     * @param int $index
+     * @return T|null
+     */
+    public function at(int $index): mixed
+    {
+        $current = 0;
+        foreach ($this->getIterator() as $value) {
+            if ($current === $index) {
+                return $value;
+            }
+            $current++;
+        }
+        return null;
+    }
 
-					case 'skip':
-						$skipCount = $op['arg'];
-						if ($skipped < $skipCount) {
-							$skipped++;
-							continue 3;
-						}
-						break;
+    /**
+     * Sum numeric values (forces evaluation)
+     *
+     * @return int|float
+     */
+    public function sum(): int|float
+    {
+        return $this->reduce(static fn($carry, $item) => $carry + (is_numeric($item) ? $item : 0), 0);
+    }
 
-					case 'take':
-						$takeLimit = $op['arg'];
-						if ($taken >= $takeLimit) {
-							return; // Stop iteration
-						}
-						break;
+    /**
+     * Reduce to single value (forces evaluation!)
+     *
+     * @template TReduce
+     * @param callable(TReduce, T, int): TReduce $fn
+     * @param TReduce $initial
+     * @return TReduce
+     */
+    public function reduce(callable $fn, mixed $initial = null): mixed
+    {
+        $carry = $initial;
+        $index = 0;
+        foreach ($this->getIterator() as $value) {
+            $carry = $fn($carry, $value, $index++);
+        }
+        return $carry;
+    }
 
-					case 'slice':
-						[$sliceOffset, $sliceLength] = $op['arg'];
-						if ($index < $sliceOffset) {
-							$index++;
-							continue 3;
-						}
-						if ($sliceLength !== null && $index >= $sliceOffset + $sliceLength) {
-							return;
-						}
-						break;
+    /**
+     * Average of numeric values (forces evaluation)
+     *
+     * @return float|null
+     */
+    public function avg(): ?float
+    {
+        $sum = 0;
+        $count = 0;
+        foreach ($this->getIterator() as $value) {
+            if (is_numeric($value)) {
+                $sum += $value;
+                $count++;
+            }
+        }
+        return $count > 0 ? $sum / $count : null;
+    }
 
-					case 'unique':
-						$hash = serialize($value);
-						if (in_array($hash, $seen, true)) {
-							continue 3;
-						}
-						$seen[] = $hash;
-						break;
+    /**
+     * Minimum value (forces evaluation)
+     *
+     * @return T|null
+     */
+    public function min(): mixed
+    {
+        $min = null;
+        foreach ($this->getIterator() as $value) {
+            if ($min === null || $value < $min) {
+                $min = $value;
+            }
+        }
+        return $min;
+    }
 
-					case 'each':
-						$op['fn']($value, $index);
-						break;
+    /**
+     * Maximum value (forces evaluation)
+     *
+     * @return T|null
+     */
+    public function max(): mixed
+    {
+        $max = null;
+        foreach ($this->getIterator() as $value) {
+            if ($max === null || $value > $max) {
+                $max = $value;
+            }
+        }
+        return $max;
+    }
 
-					case 'chunk':
-						$chunkSize = $op['arg'];
-						$currentChunk[] = $value;
-						if (count($currentChunk) === $chunkSize) {
-							yield Sequence::from($currentChunk);
-							$currentChunk = [];
-						}
-						continue 3;
-				}
-			}
+    /**
+     * Count elements (forces evaluation!)
+     *
+     * @return int
+     */
+    public function count(): int
+    {
+        $count = 0;
+        foreach ($this->getIterator() as $_) {
+            $count++;
+        }
+        return $count;
+    }
 
-			// Yield transformed value
-			yield $value;
-			$index++;
-			$taken++;
+    /**
+     * Check if empty (lazy - only checks first element!)
+     *
+     * @return bool
+     */
+    public function isEmpty(): bool
+    {
+        foreach ($this->getIterator() as $_) {
+            return false;
+        }
+        return true;
+    }
 
-			// Check take limit
-			if ($takeLimit !== null && $taken >= $takeLimit) {
-				return;
-			}
-		}
+    /**
+     * Join elements with separator (forces evaluation)
+     *
+     * @param string $separator
+     * @return string
+     */
+    public function join(string $separator = ''): string
+    {
+        return implode($separator, $this->toArray());
+    }
 
-		// Yield remaining chunk
-		if ($chunkSize !== null && !empty($currentChunk)) {
-			yield Sequence::from($currentChunk);
-		}
-	}
+    /**
+     * Convert to array (forces evaluation!)
+     *
+     * @return list<T>
+     */
+    public function toArray(): array
+    {
+        return iterator_to_array($this->getIterator(), false);
+    }
 
-	/**
-	 * Get source generator
-	 * 
-	 * @return Generator<int, T>
-	 */
-	private function getSource(): Generator
-	{
-		// Handle range specially
-		foreach ($this->operations as $op) {
-			if ($op['type'] === 'range') {
-				[$start, $end, $step] = $op['arg'];
-				if ($step > 0) {
-					for ($i = $start; $i <= $end; $i += $step) {
-						yield $i;
-					}
-				} else {
-					for ($i = $start; $i >= $end; $i += $step) {
-						yield $i;
-					}
-				}
-				return;
-			}
-		}
+    /**
+     * Convert to eager Sequence (forces evaluation!)
+     *
+     * @return Sequence<T>
+     */
+    public function toEager(): Sequence
+    {
+        return Sequence::from($this->toArray());
+    }
 
-		// Use provided source
-		if ($this->source !== null) {
-			$index = 0;
-			foreach ($this->source as $value) {
-				yield $index++ => $value;
-			}
-		}
-	}
+    /**
+     * Convert to Map using key extractor
+     *
+     * @template TKey of array-key
+     * @param callable(T, int): TKey $keyFn
+     * @return LazyMap<TKey, T>
+     */
+    public function toMap(callable $keyFn): LazyMap
+    {
+        $map = [];
+        $index = 0;
+        foreach ($this->getIterator() as $value) {
+            $key = $keyFn($value, $index++);
+            $map[$key] = $value;
+        }
+        return LazyMap::from($map);
+    }
 }
