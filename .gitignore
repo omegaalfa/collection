@@ -1,8 +1,39 @@
+# Dependencies
 /vendor/
-.idea/
-.env
-phpunit.xml
-phpstan.neon
 composer.lock
-!/vendor/phpunit/
-!/.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Testing
+.phpunit.result.cache
+phpunit.xml
+coverage.xml
+junit.xml
+coverage/
+
+# Static Analysis
+phpstan.neon
+.phpstan/
+
+# Build artifacts
+build/
+dist/
+
+# Temporary files
+*.tmp
+*.log
+examples/output.txt
+
+# OS
+.DS_Store
+Thumbs.db

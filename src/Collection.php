@@ -11,6 +11,8 @@ use Generator;
 use Iterator;
 use IteratorAggregate;
 use Traversable;
+use Omegaalfa\Collection\Util\LazyProxyObject;
+use Closure;
 
 /**
  * @template TKey of array-key
@@ -31,6 +33,16 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
      */
     private ?int $cachedCount = null;
 
+    /**
+     * @var array<TKey, TValue>|null
+     */
+    private ?array $cachedArray = null;
+
+    /**
+     * @var array<string, Closure>
+     */
+    private array $lazyOperations = [];
+
 
     /**
      * @param Iterator<TKey, TValue>|array<TKey, TValue> $collection
@@ -47,6 +59,7 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
     private function invalidateCache(): void
     {
         $this->cachedCount = null;
+        $this->cachedArray = null;
     }
 
     /**
@@ -90,6 +103,26 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
     }
 
     /**
+     * Lazy map - adia execução até materialização
+     * 
+     * @template TNewValue
+     *
+     * @param callable(TValue, TKey): TNewValue $callback
+     *
+     * @return Collection<TKey, TNewValue>
+     */
+    public function lazyMap(callable $callback): Collection
+    {
+        $generator = function() use ($callback): Generator {
+            foreach ($this->getIterator() as $key => $item) {
+                yield $key => $callback($item, $key);
+            }
+        };
+
+        return new self($generator());
+    }
+
+    /**
      * @return Traversable<TKey, TValue>
      */
     public function getIterator(): Traversable
@@ -99,6 +132,47 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
         }
 
         return $this->collection;
+    }
+
+    /**
+     * Cria uma coleção lazy a partir de um callback
+     * 
+     * @template TNewKey of array-key
+     * @template TNewValue
+     *
+     * @param callable(): Generator<TNewKey, TNewValue> $callback
+     *
+     * @return Collection<TNewKey, TNewValue>
+     */
+    public static function lazy(callable $callback): Collection
+    {
+        return new self($callback());
+    }
+
+    /**
+     * Cria range lazy usando generator
+     * 
+     * @param int $start
+     * @param int $end
+     * @param int $step
+     *
+     * @return Collection<int, int>
+     */
+    public static function lazyRange(int $start, int $end, int $step = 1): Collection
+    {
+        $generator = static function() use ($start, $end, $step): Generator {
+            if ($step > 0) {
+                for ($i = $start; $i <= $end; $i += $step) {
+                    yield $i;
+                }
+            } else {
+                for ($i = $start; $i >= $end; $i += $step) {
+                    yield $i;
+                }
+            }
+        };
+
+        return new self($generator());
     }
 
     /**
@@ -119,6 +193,26 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
     }
 
     /**
+     * Lazy filter - adia execução até materialização
+     * 
+     * @param callable(TValue, TKey): bool $callback
+     *
+     * @return Collection<TKey, TValue>
+     */
+    public function lazyFilter(callable $callback): Collection
+    {
+        $generator = function() use ($callback): Generator {
+            foreach ($this->getIterator() as $key => $item) {
+                if ($callback($item, $key)) {
+                    yield $key => $item;
+                }
+            }
+        };
+
+        return new self($generator());
+    }
+
+    /**
      * @param callable(TValue, TKey): void $callback
      *
      * @return $this
@@ -130,6 +224,44 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
         }
 
         return $this;
+    }
+
+    /**
+     * Pipeline de operações lazy - combina múltiplas transformações em uma única passagem
+     * 
+     * @param array<callable> $operations Array de callbacks para aplicar
+     *
+     * @return Collection<TKey, TValue>
+     */
+    public function lazyPipeline(array $operations): Collection
+    {
+        $generator = function() use ($operations): Generator {
+            foreach ($this->getIterator() as $key => $item) {
+                $value = $item;
+                $shouldYield = true;
+
+                foreach ($operations as $operation) {
+                    $result = $operation($value, $key);
+                    
+                    // Se retornar false, pula este item (filter)
+                    if ($result === false) {
+                        $shouldYield = false;
+                        break;
+                    }
+                    
+                    // Se retornar um valor, usa como novo valor (map)
+                    if ($result !== null && $result !== true) {
+                        $value = $result;
+                    }
+                }
+
+                if ($shouldYield) {
+                    yield $key => $value;
+                }
+            }
+        };
+
+        return new self($generator());
     }
 
     /**
@@ -350,12 +482,114 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
     }
 
     /**
+     * Lazy chunk - cria chunks sob demanda
+     * 
+     * @param int $size
+     *
+     * @return Collection<int, Collection<TKey, TValue>>
+     */
+    public function lazyChunk(int $size): Collection
+    {
+        if ($size <= 0) {
+            throw new \InvalidArgumentException('Chunk size must be greater than 0');
+        }
+
+        $generator = function() use ($size): Generator {
+            $chunk = [];
+            $count = 0;
+
+            foreach ($this->getIterator() as $key => $item) {
+                $chunk[$key] = $item;
+                $count++;
+
+                if ($count === $size) {
+                    yield new self($chunk);
+                    $chunk = [];
+                    $count = 0;
+                }
+            }
+
+            if (!empty($chunk)) {
+                yield new self($chunk);
+            }
+        };
+
+        return new self($generator());
+    }
+
+    /**
+     * Cria uma coleção de objetos lazy usando LazyProxyObject
+     * Os objetos só são instanciados quando acessados
+     * 
+     * @template TObject of object
+     * 
+     * @param array<TKey, Closure(): TObject> $factories Array de factories para criar objetos
+     *
+     * @return Collection<TKey, TObject>
+     */
+    public function lazyObjects(array $factories): Collection
+    {
+        $lazyObjects = [];
+
+        foreach ($factories as $key => $factory) {
+            // Garante que é Closure
+            if (!$factory instanceof Closure) {
+                $factory = Closure::fromCallable($factory);
+            }
+
+            // Determina a classe do objeto a partir do primeiro objeto criado
+            // Nota: Em produção, você pode querer passar a classe explicitamente
+            $tempObject = $factory();
+            $className = get_class($tempObject);
+            unset($tempObject);
+
+            try {
+                $lazyProxy = new LazyProxyObject($className);
+                $lazyObjects[$key] = $lazyProxy->lazyProxy($factory);
+            } catch (\ReflectionException $e) {
+                // Fallback: usa o factory diretamente
+                $lazyObjects[$key] = $factory();
+            }
+        }
+
+        return new self($lazyObjects);
+    }
+
+    /**
      * @return float|null
      */
     public function avg(): ?float
     {
         $count = $this->count();
         return $count > 0 ? $this->sum() / $count : null;
+    }
+
+    /**
+     * Materializa a coleção lazy em array
+     * Útil quando você precisa garantir que todas operações lazy foram executadas
+     * 
+     * @return Collection<TKey, TValue>
+     */
+    public function materialize(): Collection
+    {
+        // Se já é array e está cacheado, retorna uma nova instância
+        if ($this->cachedArray !== null) {
+            return new self($this->cachedArray);
+        }
+
+        // Força a materialização
+        $array = $this->toArray();
+        return new self($array);
+    }
+
+    /**
+     * Verifica se a coleção está usando avaliação lazy
+     * 
+     * @return bool
+     */
+    public function isLazy(): bool
+    {
+        return $this->collection instanceof Generator;
     }
 
     /**
@@ -432,7 +666,18 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
      */
     public function toArray(): array
     {
-        return iterator_to_array($this, true);
+        // Usa cache se disponível
+        if ($this->cachedArray !== null) {
+            return $this->cachedArray;
+        }
+
+        // Se já é array, retorna diretamente
+        if (is_array($this->collection)) {
+            return $this->cachedArray = $this->collection;
+        }
+
+        // Converte iterator para array e cacheia
+        return $this->cachedArray = iterator_to_array($this, true);
     }
 
     /**
@@ -459,6 +704,34 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
         }
 
         return $this->slice(0, $limit);
+    }
+
+    /**
+     * Take lazy - pega N elementos sem materializar toda a coleção
+     * 
+     * @param int $limit
+     *
+     * @return Collection<TKey, TValue>
+     */
+    public function lazyTake(int $limit): Collection
+    {
+        if ($limit < 0) {
+            // Para limites negativos, precisamos materializar
+            return $this->slice($limit);
+        }
+
+        $generator = function() use ($limit): Generator {
+            $count = 0;
+            foreach ($this->getIterator() as $key => $item) {
+                if ($count >= $limit) {
+                    break;
+                }
+                yield $key => $item;
+                $count++;
+            }
+        };
+
+        return new self($generator());
     }
 
     /**

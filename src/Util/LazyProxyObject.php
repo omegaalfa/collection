@@ -34,7 +34,7 @@ class LazyProxyObject
 	 * Create a lazy proxy that initializes on first method call
 	 * 
 	 * @param Closure(): T $factory
-	 * @return T
+	 * @return object
 	 */
 	public function lazyProxy(Closure $factory): object
 	{
@@ -45,7 +45,7 @@ class LazyProxyObject
 	 * Create a lazy ghost that initializes on first property access
 	 * 
 	 * @param Closure(T): void $factory
-	 * @return T
+	 * @return object
 	 */
 	public function lazyGhost(Closure $factory): object
 	{

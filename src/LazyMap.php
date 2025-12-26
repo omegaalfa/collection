@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Omegaalfa\Collection;
 
+use Closure;
 use Countable;
 use IteratorAggregate;
+use Omegaalfa\Collection\Util\LazyProxyObject;
 use Traversable;
 
 /**
@@ -60,6 +62,80 @@ class LazyMap implements IteratorAggregate, Countable
         foreach ($pairs as [$key, $value]) {
             $items[$key] = $value;
         }
+        return new self($items);
+    }
+
+    /**
+     * Create lazy map with lazy object proxies using LazyProxyObject (PHP 8.4+)
+     * Perfect for expensive object instantiation (DB queries, API calls, etc)
+     * 
+     * @template K of array-key
+     * @template V of object
+     * @param array<K, array{class-string<V>, ...mixed}> $specs Key => [ClassName, ...constructorArgs]
+     * @return self<K, V>
+     * 
+     * @example
+     * $users = LazyMap::ofLazyObjects([
+     *     'john' => [User::class, 'john', 'john@example.com'],
+     *     'jane' => [User::class, 'jane', 'jane@example.com'],
+     * ]);
+     * $john = $users->get('john'); // Only NOW instantiates User!
+     */
+    public static function ofLazyObjects(array $specs): self
+    {
+        $items = [];
+        
+        foreach ($specs as $key => $spec) {
+            $className = array_shift($spec);
+            $args = $spec;
+            
+            try {
+                $proxy = new LazyProxyObject($className);
+                $items[$key] = $proxy->lazyProxy(fn() => new $className(...$args));
+            } catch (\ReflectionException) {
+                // Fallback para closure normal se LazyProxyObject falhar
+                $items[$key] = fn() => new $className(...$args);
+            }
+        }
+        
+        return new self($items);
+    }
+
+    /**
+     * Create lazy map with custom factory closures for objects
+     * Use when you need more control over object instantiation
+     * 
+     * @template K of array-key
+     * @template V of object
+     * @param array<K, array{class-string<V>, Closure(): V}> $specs Key => [ClassName, Factory]
+     * @return self<K, V>
+     * 
+     * @example
+     * $users = LazyMap::ofLazyFactories([
+     *     'john' => [User::class, fn() => User::loadFromDB('john')],
+     *     'jane' => [User::class, fn() => User::loadFromCache('jane')],
+     * ]);
+     */
+    public static function ofLazyFactories(array $specs): self
+    {
+        $items = [];
+        
+        foreach ($specs as $key => $spec) {
+            [$className, $factory] = $spec;
+            
+            if (!$factory instanceof Closure) {
+                $factory = Closure::fromCallable($factory);
+            }
+            
+            try {
+                $proxy = new LazyProxyObject($className);
+                $items[$key] = $proxy->lazyProxy($factory);
+            } catch (\ReflectionException) {
+                // Fallback para closure normal
+                $items[$key] = $factory;
+            }
+        }
+        
         return new self($items);
     }
 

@@ -6,6 +6,7 @@ namespace Omegaalfa\Collection;
 
 use Iterator;
 use JsonException;
+use RuntimeException;
 use SplFileObject;
 
 /**
@@ -31,16 +32,16 @@ class LazyFileIterator implements Iterator
     /**
      * @param string $filePath
      *
-     * @throws \RuntimeException
+     * @throws RuntimeException
      */
     public function __construct(string $filePath)
     {
         if (!file_exists($filePath)) {
-            throw new \RuntimeException("File not found: {$filePath}");
+            throw new RuntimeException("File not found: {$filePath}");
         }
 
         if (!is_readable($filePath)) {
-            throw new \RuntimeException("File not readable: {$filePath}");
+            throw new RuntimeException("File not readable: {$filePath}");
         }
 
         $this->file = new SplFileObject($filePath);
