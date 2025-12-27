@@ -9,7 +9,7 @@ use Generator;
 
 /**
  * Trait para operações lazy (avaliação preguiçosa)
- * 
+ *
  * @template TKey of array-key
  * @template TValue
  */
@@ -55,38 +55,81 @@ trait LazyOperationsTrait
     /**
      * Pipeline de operações lazy - combina múltiplas transformações em uma única passagem
      *
-     * @param array<callable> $operations Array de callbacks para aplicar
+     * @param array<array{string, callable|int}|callable> $operations Array de operações [método, callback|valor] ou callbacks
      * @return self<TKey, TValue>
      */
     public function lazyPipeline(array $operations): self
     {
-        $generator = function () use ($operations): Generator {
-            foreach ($this->getIterator() as $key => $item) {
-                $value = $item;
-                $shouldYield = true;
+        $iterator = $this->getIterator();
 
-                foreach ($operations as $operation) {
-                    $result = $operation($value, $key);
+        foreach ($operations as $operation) {
+            if (is_array($operation) && count($operation) === 2) {
+                [$method, $param] = $operation;
 
-                    // Se retornar false, pula este item (filter)
-                    if ($result === false) {
-                        $shouldYield = false;
-                        break;
+                // Valida o parâmetro conforme o método
+                if ($method === 'take' || $method === 'skip') {
+                    if (!is_int($param)) {
+                        throw new \InvalidArgumentException("Parameter for '{$method}' must be an integer");
                     }
-
-                    // Se retornar um valor, usa como novo valor (map)
-                    if ($result !== null && $result !== true) {
-                        $value = $result;
-                    }
+                } elseif (!is_callable($param)) {
+                    throw new \InvalidArgumentException("Second array member must be callable for method '{$method}'");
                 }
 
-                if ($shouldYield) {
-                    yield $key => $value;
-                }
+                // Aplica a operação correspondente
+                $generator = match ($method) {
+                    'map' => static function () use ($iterator, $param): Generator {
+                        foreach ($iterator as $key => $item) {
+                            yield $key => $param($item, $key);
+                        }
+                    },
+                    'filter' => static function () use ($iterator, $param): Generator {
+                        foreach ($iterator as $key => $item) {
+                            if ($param($item, $key)) {
+                                yield $key => $item;
+                            }
+                        }
+                    },
+                    'take' => static function () use ($iterator, $param): Generator {
+                        $count = 0;
+                        foreach ($iterator as $key => $item) {
+                            if ($count >= $param) {
+                                break;
+                            }
+                            yield $key => $item;
+                            $count++;
+                        }
+                    },
+                    'skip' => static function () use ($iterator, $param): Generator {
+                        $count = 0;
+                        foreach ($iterator as $key => $item) {
+                            if ($count >= $param) {
+                                yield $key => $item;
+                            }
+                            $count++;
+                        }
+                    },
+                    default => throw new \InvalidArgumentException("Unknown operation: {$method}")
+                };
+
+                $iterator = $generator();
+            } elseif (is_callable($operation)) {
+                // Fallback para callbacks diretos
+                $generator = function () use ($iterator, $operation): Generator {
+                    foreach ($iterator as $key => $item) {
+                        $result = $operation($item, $key);
+                        if ($result === false) {
+                            continue;
+                        }
+                        yield $key => ($result !== null && $result !== true) ? $result : $item;
+                    }
+                };
+                $iterator = $generator();
+            } else {
+                throw new \InvalidArgumentException("Invalid operation format");
             }
-        };
+        }
 
-        return new self($generator());
+        return new self($iterator);
     }
 
     /**

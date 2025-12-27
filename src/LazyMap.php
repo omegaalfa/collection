@@ -181,7 +181,7 @@ class LazyMap implements IteratorAggregate, Countable
 
         $value = $this->items[$key];
 
-        // Execute closure if lazy value
+        // Execute closure if lazy value and cache it
         if ($value instanceof \Closure) {
             $value = $value();
             $this->materialized[$key] = $value;
@@ -267,11 +267,11 @@ class LazyMap implements IteratorAggregate, Countable
     {
         $result = [];
         foreach ($this->items as $key => $value) {
-            // Wrap transformation in closure if value is already lazy
+            // Always wrap transformation in closure to preserve laziness
             if ($value instanceof \Closure) {
                 $result[$key] = fn() => $fn($key, $value());
             } else {
-                $result[$key] = $fn($key, $value);
+                $result[$key] = fn() => $fn($key, $value);
             }
         }
         return new self($result);

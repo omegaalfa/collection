@@ -119,7 +119,7 @@ final class Map implements MapInterface
             return $items;
         }
 
-        return new self(is_array($items) ? $items : iterator_to_array($items, true));
+        return new self(is_array($items) ? $items : $items->toArray());
     }
 
     /**
