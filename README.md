@@ -559,7 +559,7 @@ php examples/COMPLETE_USAGE_EXAMPLES.php
 
 ## 📖 Documentation
 
-- **[API.md](API.md)** - Complete API reference with all 150+ methods documented
+- **[API.md](docs/API.md)** - Complete API reference with all 150+ methods documented
 - **[BENCHMARK.md](BENCHMARK.md)** - Performance comparison vs Doctrine Collections
 - **[CHANGELOG.md](CHANGELOG.md)** - Version history and changes
 - **[examples/README.md](examples/README.md)** - Examples directory index

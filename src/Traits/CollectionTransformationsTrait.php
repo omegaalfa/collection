@@ -55,7 +55,7 @@ trait CollectionTransformationsTrait
             return new self(array_reverse($this->collection, true));
         }
 
-        return new self(array_reverse(iterator_to_array($this->getIterator(), true), true));
+        return new self(array_reverse($this->toArray(), true));
     }
 
     /**
