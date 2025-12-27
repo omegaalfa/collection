@@ -59,7 +59,7 @@ final class Map implements MapInterface
     {
         $items = [$k1 => $v1];
 
-        for ($i = 0; $i < count($rest); $i += 2) {
+        for ($i = 0, $iMax = count($rest); $i < $iMax; $i += 2) {
             if (!isset($rest[$i + 1])) {
                 throw new \InvalidArgumentException('Map::of requires key-value pairs');
             }
