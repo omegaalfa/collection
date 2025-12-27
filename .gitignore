@@ -1,6 +1,6 @@
 # Dependencies
 /vendor/
-composer.lock
+# composer.lock - Committed for consistent CI builds
 
 # IDE
 .idea/

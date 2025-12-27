@@ -29,11 +29,11 @@ jobs:
         php-version: ${{ matrix.php }}
         coverage: xdebug
 
-    - name: Validate composer.json and composer.lock
-      run: composer validate
+    - name: Validate composer.json
+      run: composer validate --no-check-lock
 
     - name: Install dependencies
-      run: composer update --prefer-dist --no-progress --no-suggest ${{ matrix.composer }}
+      run: composer install --prefer-dist --no-progress --optimize-autoloader ${{ matrix.composer }}
 
     - name: Run PHPUnit
       run: vendor/bin/phpunit ${{ matrix.coverage }}
