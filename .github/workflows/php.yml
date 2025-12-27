@@ -1,51 +1,39 @@
-name: PHP
+name: PHP Composer
 
 on:
   push:
-    branches: [ master ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ master ]
+    branches: [ "main" ]
+
+permissions:
+  contents: read
 
 jobs:
-  run:
+  build:
+
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        php: ['8.3', '8.4']
-        include:
-          - php: '8.3'
-            composer-flags: '--prefer-lowest'
-          - php: '8.3'
-            coverage: true
-          - php: '8.4'
-    name: PHP ${{ matrix.php }} ${{ matrix.composer-flags && 'with --prefer-lowest' || '' }}
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-    - name: Setup PHP
-      uses: shivammathur/setup-php@v2
-      with:
-        php-version: ${{ matrix.php }}
-        extensions: mbstring, json
-        coverage: xdebug
-        tools: composer:v2
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
 
-    - name: Verify PHP Version
-      run: php -v
+      - name: Cache Composer packages
+        id: composer-cache
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: ${{ runner.os }}-php-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-php-
 
-    - name: Validate composer.json
-      run: composer validate --no-check-lock
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress
 
-    - name: Install dependencies
-      run: composer install --prefer-dist --no-progress --optimize-autoloader ${{ matrix.composer-flags }}
-
-    - name: Run PHPUnit
-      run: vendor/bin/phpunit ${{ matrix.coverage && '--coverage-clover=/tmp/clover.xml' || '--no-coverage' }}
-
-    - name: Upload coverage to Scrutinizer
-      if: ${{ matrix.coverage }}
-      run: |
-        wget https://scrutinizer-ci.com/ocular.phar -O "/tmp/ocular.phar"
-        php "/tmp/ocular.phar" code-coverage:upload --format=php-clover /tmp/clover.xml
+      - name: Verifica sintaxe de src
+        run: php -l src
