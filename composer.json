@@ -16,7 +16,7 @@
     }
   ],
   "require": {
-    "php": ">=8.4"
+    "php": ">=8.3"
   },
   "autoload": {
     "psr-4": {
@@ -33,7 +33,7 @@
     "roave/security-advisories": "dev-latest",
     "phpunit/phpunit": "^11.0 || ^12.0",
     "phpstan/phpstan": "^2.0",
-    "doctrine/collections": "3.0.x-dev"
+    "doctrine/collections": "^2.2 || 3.0.x-dev"
   },
   "scripts": {
     "test": "phpunit"

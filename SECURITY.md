@@ -6,7 +6,7 @@ We actively support the following versions with security updates:
 
 | Version | Supported          | PHP Version |
 | ------- | ------------------ | ----------- |
-| 1.x     | :white_check_mark: | >= 8.4      |
+| 1.x     | :white_check_mark: | >= 8.3      |
 | < 1.0   | :x:                | N/A         |
 
 ## Reporting a Vulnerability
