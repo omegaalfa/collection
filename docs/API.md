@@ -17,6 +17,7 @@
 - [LazyMap](#️-lazymap) - Map com valores lazy
 - [LazyFileIterator](#-lazyfileiterator) - Iterator para arquivos grandes
 - [LazyProxyObject](#-lazyproxyobject) - Lazy objects (PHP 8.4+)
+- [DataFrame](#-dataframe) - Abstração tabular estilo pandas
 - [Exemplos Práticos](#-exemplos-práticos)
 
 ---
@@ -31,6 +32,7 @@
 | **LazySequence** | Grandes datasets, streaming | ❌ | ✅ | ✅ |
 | **LazyMap** | Valores caros, service containers | ❌ | ✅ | ✅ |
 | **LazyFileIterator** | Arquivos grandes (JSON Lines) | ❌ | ✅ | ⚠️ |
+| **DataFrame** | Dados tabulares, CSV/JSONL, group-by | ❌ | ✅ | ✅ |
 
 ### 📊 Comparação de Performance
 
@@ -490,6 +492,41 @@ $result = Collection::lazyRange(1, 1000000)
 ```
 
 **⚡ Performance:** Short-circuit - para imediatamente
+
+---
+
+#### `lazySlice(int $offset, ?int $length = null): Collection`
+<sup>lazy</sup>
+
+Recorta a coleção sem materializar a fonte quando `$offset >= 0` e `$length` é nulo ou não negativo. Variantes com valores negativos podem materializar a fonte.
+
+```php
+$page = Collection::lazyRange(1, 1000000)
+    ->lazySlice(100, 20)
+    ->toArray();
+```
+
+---
+
+#### `lazyUnique(): Collection`
+<sup>lazy</sup>
+
+Emite apenas a primeira ocorrência de cada valor. A saída é lazy, mas a tabela de valores já vistos cresce com a quantidade de itens distintos.
+
+```php
+$unique = $collection->lazyUnique();
+```
+
+---
+
+#### `lazyPluck(string|int $key): Collection`
+<sup>lazy</sup>
+
+Extrai uma chave de arrays ou propriedades públicas de objetos sob demanda.
+
+```php
+$ids = $rows->lazyPluck('id')->lazyTake(100);
+```
 
 ---
 
@@ -1663,6 +1700,8 @@ $lazy = LazySequence::from([1, 2, 3]);
 $lazy = LazySequence::from($generator);
 ```
 
+Quando a fonte é um `Generator` one-shot, `LazySequence::from()` mantém um replay incremental para que terminais sucessivos (`count()`, `toArray()`, etc.) possam reutilizar a sequência. Esse replay usa memória proporcional ao trecho já consumido.
+
 ### Transformações (todas lazy!)
 
 #### `map(callable $fn): LazySequence`
@@ -2174,6 +2213,67 @@ $db->connect(); // Instancia DB agora
 
 ---
 
+## 📊 DataFrame
+
+**Abstração tabular estilo pandas** sobre as collections e file parsers da biblioteca.
+Cada linha é `array<string, mixed>` (coluna => valor); transformações são **lazy** até um terminal.
+
+> 📘 **Guia completo com exemplos de todos os métodos:** **[docs/DataFrame.md](DataFrame.md)**
+
+### 🏗️ Factories
+
+| Método | Descrição |
+|---|---|
+| `DataFrame::fromArray(array $data): self` | Lista de linhas associativas; colunas = união das chaves |
+| `DataFrame::fromCsv(string $filePath, array $options = []): self` | CSV lazy (`delimiter`, `enclosure`, `escape`, `hasHeaders`, `columns`) |
+| `DataFrame::fromJsonLines(string $filePath): self` | JSON Lines lazy (um objeto JSON por linha) |
+| `DataFrame::fromSequence(SequenceInterface $sequence): self` | A partir de uma `Sequence` de linhas |
+| `cached(): self` | Materializa uma vez para reutilizar em vários terminais |
+
+### 🔍 Seleção & Colunas
+
+| Método | Avaliação | Descrição |
+|---|---|---|
+| `select(string ...$columns): self` | 🟢 Lazy | Projeta colunas (ordem preservada) |
+| `where(callable $predicate): self` | 🟢 Lazy | Filtra linhas (`fn(array $row): bool`) |
+| `head(int $n = 5): array` | 🔴 Terminal | Primeiras N linhas (avalia ≤ N) |
+| `tail(int $n = 5): array` | 🔴 Terminal | Últimas N linhas (janela O(n)) |
+| `withColumn(string $name, callable $callback): self` | 🟢 Lazy | Adiciona/substitui coluna |
+| `drop(string ...$columns): self` | 🟢 Lazy | Remove colunas |
+| `rename(array $mapping): self` | 🟢 Lazy | Renomeia (`[antigo => novo]`) |
+| `columns(): array` | — | Lista de colunas (`list<string>`) |
+
+### 📈 Agregações & Exportação
+
+| Método | Descrição |
+|---|---|
+| `groupBy(string $column): array` | Grupos `array<chave, DataFrame>` (ordem de aparição) |
+| `count(): int` | Linhas (também `count($df)`) |
+| `sum(string $column): float\|int` | Soma dos numéricos (não numéricos = 0) |
+| `mean(string $column): float` | Média dos numéricos (lança se não houver) |
+| `min(string $column): mixed` | Menor valor (nulls ignorados) |
+| `max(string $column): mixed` | Maior valor (nulls ignorados) |
+| `describe(string $column): array` | `count`, `sum`, `mean`, `min` e `max` em uma passagem |
+| `toArray(): array` | `list<array<string, mixed>>` |
+| `toCsv(string $filePath): void` | Exporta CSV (header = colunas) |
+| `toJson(): string` | Linhas como array JSON |
+
+```php
+use Omegaalfa\Collection\DataFrame;
+
+$result = DataFrame::fromCsv('vendas.csv')                    // streaming lazy
+    ->where(fn(array $row) => (int) $row['qty'] >= 7)
+    ->withColumn('total', fn(array $row) => (int) $row['qty'] * (float) $row['price'])
+    ->select('id', 'region', 'total')
+    ->head(100);                                              // terminal
+
+foreach (DataFrame::fromCsv('vendas.csv')->groupBy('region') as $region => $group) {
+    echo "{$region}: ", $group->sum('total'), "\n";
+}
+```
+
+---
+
 ## 🎯 Exemplos Práticos
 
 ### 🚀 Pipeline Lazy vs Eager
@@ -2610,7 +2710,7 @@ $data->lazyChunk(1000)->each(function($chunk) {
 ### Collection - 50+ métodos
 - **Criação:** `__construct`, `lazyRange`, `lazyObjects`
 - **Transformações Eager:** `map`, `filter`, `unique`, `reverse`, `chunk`, `sort`, `sortKeys`
-- **Transformações Lazy:** `lazyMap`, `lazyFilter`, `lazyChunk`, `lazyTake`, `lazyPipeline`, `lazy`
+- **Transformações Lazy:** `lazyMap`, `lazyFilter`, `lazyChunk`, `lazyTake`, `lazySlice`, `lazyUnique`, `lazyPluck`, `lazyPipeline`, `lazy`
 - **Acesso:** `first`, `last`, `current`, `contains`, `pluck`
 - **Agregação:** `count`, `sum`, `avg`, `min`, `max`, `reduce`
 - **Slicing:** `take`, `slice`
@@ -2655,6 +2755,15 @@ $data->lazyChunk(1000)->each(function($chunk) {
 
 ### LazyProxyObject - 2 métodos
 - **Lazy Objects:** `lazyProxy`, `lazyGhost`
+
+### DataFrame - 21 métodos
+- **Factories:** `fromArray`, `fromCsv`, `fromJsonLines`, `fromSequence`
+- **Seleção:** `select`, `where`, `head`, `tail`
+- **Colunas:** `withColumn`, `drop`, `rename`, `columns`
+- **Agregações:** `groupBy`, `count`, `sum`, `mean`, `min`, `max`
+- **Exportação:** `toArray`, `toCsv`, `toJson`
+
+> 📘 Detalhes e exemplos: **[DataFrame.md](DataFrame.md)**
 
 ---
 

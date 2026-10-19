@@ -217,4 +217,26 @@ class CollectionLazyTest extends TestCase
         $this->assertTrue($collection->isLazy());
         $this->assertEquals([1, 2, 3], array_values($collection->toArray()));
     }
+
+    public function testAdditionalLazyOperationsRemainReiterable(): void
+    {
+        $collection = new Collection([1, 2, 2, 3, 4]);
+
+        $this->assertSame([2, 3], array_values(
+            $collection->lazyUnique()->lazySlice(1, 2)->toArray()
+        ));
+        $this->assertSame([2, 3], array_values(
+            $collection->lazyUnique()->lazySlice(1, 2)->toArray()
+        ));
+    }
+
+    public function testLazyPluckDoesNotMaterializeTheSource(): void
+    {
+        $collection = Collection::lazy(function () {
+            yield ['id' => 1];
+            yield ['id' => 2];
+        });
+
+        $this->assertSame([1, 2], array_values($collection->lazyPluck('id')->toArray()));
+    }
 }

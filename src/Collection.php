@@ -14,6 +14,8 @@ use Omegaalfa\Collection\Traits\CollectionAggregatesTrait;
 use Omegaalfa\Collection\Traits\CollectionArrayAccessTrait;
 use Omegaalfa\Collection\Traits\CollectionTransformationsTrait;
 use Omegaalfa\Collection\Traits\LazyOperationsTrait;
+use Omegaalfa\Collection\Util\RewindableIterator;
+use Omegaalfa\Collection\Util\RegenerableIterator;
 use Traversable;
 
 /**
@@ -47,6 +49,11 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
     private ?array $cachedArray = null;
 
     /**
+     * @var RewindableIterator<TKey, TValue>|null
+     */
+    private ?RewindableIterator $rewindable = null;
+
+    /**
      * @param Iterator<TKey, TValue>|array<TKey, TValue> $collection
      */
     public function __construct(Iterator|array $collection = [])
@@ -62,6 +69,28 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
     {
         $this->cachedCount = null;
         $this->cachedArray = null;
+    }
+
+    /**
+     * Materializa o iterator interno em array (para operações mutantes).
+     * Após a materialização a coleção permanece reiterável.
+     *
+     * @return void
+     */
+    private function realizeCollection(): void
+    {
+        if (is_array($this->collection)) {
+            return;
+        }
+
+        if ($this->rewindable !== null) {
+            $this->collection = iterator_to_array($this->rewindable, true);
+        } elseif ($this->collection instanceof Generator) {
+            $this->collection = iterator_to_array($this->collection, true);
+        } else {
+            $this->collection = iterator_to_array($this->getIterator(), true);
+        }
+        $this->rewindable = null;
     }
 
     /**
@@ -87,6 +116,10 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
      */
     public static function lazyRange(int $start, int $end, int $step = 1): Collection
     {
+        if ($step === 0) {
+            throw new \InvalidArgumentException('Step must not be zero');
+        }
+
         $generator = function () use ($start, $end, $step): Generator {
             if ($step > 0) {
                 for ($i = $start; $i <= $end; $i += $step) {
@@ -109,6 +142,7 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
     public function addIterator(Iterator|array $collection = []): void
     {
         $this->collection = $collection;
+        $this->rewindable = null;
         $this->invalidateCache();
     }
 
@@ -129,31 +163,61 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
      */
     public function getIterator(): Traversable
     {
-        if (!$this->collection instanceof Traversable) {
+        if (is_array($this->collection)) {
             return new ArrayIterator($this->collection);
         }
 
-        return $this->collection;
+        // Envolve o iterator para permitir reiteração (fontes one-shot,
+        // como Generator, são memorizadas conforme são consumidas)
+        if ($this->collection instanceof RegenerableIterator) {
+            return $this->collection;
+        }
+
+        if (!$this->collection instanceof Generator) {
+            return $this->collection;
+        }
+
+        return $this->rewindable ??= new RewindableIterator($this->collection);
     }
 
     /**
-     * @param list<mixed> $array
+     * Busca recursivamente o valor associado a uma chave.
+     * Valores falsy (0, '', false, null) são retornados corretamente.
+     *
+     * @param array<array-key, mixed> $array
      * @param string $key
      * @return mixed
      */
     public function searchValueKey(array $array, string $key): mixed
     {
+        [, $value] = $this->findValueKey($array, $key);
+
+        return $value;
+    }
+
+    /**
+     * @param array<array-key, mixed> $array
+     * @param string $key
+     * @return array{bool, mixed} [encontrado, valor]
+     */
+    private function findValueKey(array $array, string $key): array
+    {
         if (array_key_exists($key, $array)) {
-            return $array[$key];
+            return [true, $array[$key]];
         }
 
         foreach ($this->arrayToGenerator($array) as $value) {
-            if (is_array($value) && $result = $this->searchValueKey($value, $key)) {
-                return $result;
+            if (!is_array($value)) {
+                continue;
+            }
+
+            [$found, $result] = $this->findValueKey($value, $key);
+            if ($found) {
+                return [$found, $result];
             }
         }
 
-        return null;
+        return [false, null];
     }
 
     /**
@@ -171,9 +235,7 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
      */
     public function remove(mixed $item): void
     {
-        if ($this->collection instanceof Iterator) {
-            $this->collection = iterator_to_array($this->collection, true);
-        }
+        $this->realizeCollection();
 
         $this->collection = array_filter($this->collection, static function ($currentItem) use ($item) {
             return $currentItem !== $item;
@@ -254,7 +316,9 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
         }
 
         // Converte iterator para array e cacheia
-        return $this->cachedArray = iterator_to_array($this, true);
+        $this->realizeCollection();
+
+        return $this->cachedArray = $this->collection;
     }
 
     /**
@@ -268,8 +332,13 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
             return in_array($value, $this->collection, true);
         }
 
-        // Fallback for iterators
-        return array_any($this->toArray(), static fn($item) => $item === $value);
+        // Short-circuit para iterators (não materializa a coleção inteira)
+        foreach ($this->getIterator() as $item) {
+            if ($item === $value) {
+                return true;
+            }
+        }
 
+        return false;
     }
 }

@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Omegaalfa\Collection\Traits;
 
-use Iterator;
-
 /**
  * Trait para implementação de ArrayAccess na Collection
- * 
+ *
  * @template TKey of array-key
  * @template TValue
  */
@@ -24,8 +22,13 @@ trait CollectionArrayAccessTrait
             return array_key_exists($offset, $this->collection);
         }
 
-        $array = iterator_to_array($this->getIterator(), true);
-        return array_key_exists($offset, $array);
+        foreach ($this->getIterator() as $key => $value) {
+            if ($key === $offset) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -45,6 +48,12 @@ trait CollectionArrayAccessTrait
     {
         if (is_array($this->collection)) {
             return $this->collection[$key] ?? null;
+        }
+
+        foreach ($this->getIterator() as $k => $value) {
+            if ($k === $key) {
+                return $value;
+            }
         }
 
         return null;
@@ -70,10 +79,7 @@ trait CollectionArrayAccessTrait
      */
     public function add(mixed $item): void
     {
-        if ($this->collection instanceof Iterator) {
-            $this->collection = iterator_to_array($this->collection);
-            return;
-        }
+        $this->realizeCollection();
 
         $this->collection[] = $item;
         $this->invalidateCache();
@@ -86,10 +92,10 @@ trait CollectionArrayAccessTrait
      */
     public function setAttribute(mixed $key, mixed $value): void
     {
-        if (is_array($this->collection)) {
-            $this->collection[$key] = $value;
-            $this->invalidateCache();
-        }
+        $this->realizeCollection();
+
+        $this->collection[$key] = $value;
+        $this->invalidateCache();
     }
 
     /**
@@ -98,7 +104,9 @@ trait CollectionArrayAccessTrait
      */
     public function offsetUnset(mixed $offset): void
     {
-        if (is_array($this->collection) && array_key_exists($offset, $this->collection)) {
+        $this->realizeCollection();
+
+        if (array_key_exists($offset, $this->collection)) {
             unset($this->collection[$offset]);
             $this->invalidateCache();
         }

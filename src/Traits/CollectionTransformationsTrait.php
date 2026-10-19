@@ -21,7 +21,12 @@ trait CollectionTransformationsTrait
      */
     public function map(callable $callback): self
     {
-        return new self(array_map($callback, $this->toArray()));
+        $result = [];
+        foreach ($this->getIterator() as $key => $item) {
+            $result[$key] = $callback($item, $key);
+        }
+
+        return new self($result);
     }
 
     /**
@@ -87,6 +92,7 @@ trait CollectionTransformationsTrait
             $chunks[] = new self($chunk);
         }
 
+        /** @var self<int, self<TKey, TValue>> */
         return new self($chunks);
     }
 
@@ -171,8 +177,12 @@ trait CollectionTransformationsTrait
         foreach ($this->getIterator() as $item) {
             if (is_array($item) && array_key_exists($key, $item)) {
                 $values[] = $item[$key];
-            } elseif (is_object($item) && property_exists($item, $key)) {
-                $values[] = $item->$key;
+            } elseif (is_object($item)) {
+                // get_object_vars respeita visibilidade e ignora props não inicializadas
+                $vars = get_object_vars($item);
+                if (array_key_exists($key, $vars)) {
+                    $values[] = $vars[$key];
+                }
             }
         }
 
