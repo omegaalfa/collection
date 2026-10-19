@@ -2,7 +2,7 @@
   "name": "omegaalfa/collection",
   "type": "library",
   "license": "MIT",
-  "description": "This library implements the Trie routing logic",
+  "description": "High-performance, memory-efficient PHP collection library with lazy evaluation support",
   "keywords": [
     "array",
     "collection",
@@ -16,7 +16,8 @@
     }
   ],
   "require": {
-    "php": "^8.4"
+    "php": "^8.4",
+    "omegaalfa/fiber-event-loop": "dev-main"
   },
   "autoload": {
     "psr-4": {
@@ -25,7 +26,7 @@
   },
   "autoload-dev": {
     "psr-4": {
-      "Tests\\": "tests/"
+      "Omegaalfa\\Collection\\Tests\\": "tests/"
     }
   },
   "minimum-stability": "dev",
@@ -36,6 +37,7 @@
     "doctrine/collections": "^2.2 || 3.0.x-dev"
   },
   "scripts": {
-    "test": "phpunit"
+    "test": "phpunit",
+    "analyse": "phpstan analyse src tests --level=1"
   }
 }

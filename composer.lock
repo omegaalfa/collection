@@ -4,8 +4,6 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "3a06843fff541192bf46060ea61f2c1f",
-    "packages": [],
     "packages-dev": [
         {
             "name": "doctrine/collections",
@@ -3101,7 +3099,7 @@
     "aliases": [],
     "minimum-stability": "dev",
     "stability-flags": {
-        "roave/security-advisories": 20
+    "roave/security-advisories": 20
     },
     "prefer-stable": false,
     "prefer-lowest": false,

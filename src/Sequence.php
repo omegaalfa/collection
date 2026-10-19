@@ -26,7 +26,7 @@ final readonly class Sequence implements SequenceInterface
     private array $items;
 
     /**
-     * @param list<T> $items
+     * @param array<array-key, T> $items
      */
     private function __construct(array $items)
     {
@@ -73,7 +73,7 @@ final readonly class Sequence implements SequenceInterface
      */
     public function at(int $index): mixed
     {
-        if (!isset($this->items[$index])) {
+        if (!array_key_exists($index, $this->items)) {
             throw new OutOfBoundsException("Index {$index} out of bounds");
         }
 
@@ -150,7 +150,7 @@ final readonly class Sequence implements SequenceInterface
      */
     public function remove(int $index): static
     {
-        if (!isset($this->items[$index])) {
+        if (!array_key_exists($index, $this->items)) {
             throw new OutOfBoundsException("Index {$index} out of bounds");
         }
 

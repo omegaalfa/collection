@@ -20,12 +20,12 @@ use Traversable;
  * @template V
  * @implements MapInterface<K, V>
  */
-final class Map implements MapInterface
+final readonly class Map implements MapInterface
 {
     /**
      * @var array<K, V>
      */
-    private readonly array $items;
+    private array $items;
 
     /**
      * @param array<K, V> $items
@@ -57,16 +57,29 @@ final class Map implements MapInterface
      */
     public static function of(mixed $k1, mixed $v1, mixed ...$rest): self
     {
+        self::assertKey($k1);
         $items = [$k1 => $v1];
 
         for ($i = 0, $iMax = count($rest); $i < $iMax; $i += 2) {
-            if (!isset($rest[$i + 1])) {
+            if (!array_key_exists($i + 1, $rest)) {
                 throw new \InvalidArgumentException('Map::of requires key-value pairs');
             }
+            self::assertKey($rest[$i]);
             $items[$rest[$i]] = $rest[$i + 1];
         }
 
         return new self($items);
+    }
+
+    /**
+     * @param mixed $key
+     * @return void
+     */
+    private static function assertKey(mixed $key): void
+    {
+        if (!is_int($key) && !is_string($key)) {
+            throw new \InvalidArgumentException('Map keys must be of type int|string');
+        }
     }
 
     /**
@@ -119,7 +132,7 @@ final class Map implements MapInterface
             return $items;
         }
 
-        return new self(is_array($items) ? $items : $items->toArray());
+        return new self(is_array($items) ? $items : iterator_to_array($items, true));
     }
 
     /**
@@ -261,7 +274,8 @@ final class Map implements MapInterface
      */
     public function merge(MapInterface $other): static
     {
-        return new self([...$this->items, ...$other->toArray()]);
+        // array_replace preserva chaves inteiras (spread as renumera)
+        return new self(array_replace($this->items, $other->toArray()));
     }
 
     /**

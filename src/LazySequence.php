@@ -7,6 +7,7 @@ namespace Omegaalfa\Collection;
 use Countable;
 use Generator;
 use IteratorAggregate;
+use Omegaalfa\Collection\Util\RewindableIterator;
 use Traversable;
 
 /**
@@ -82,6 +83,7 @@ class LazySequence implements IteratorAggregate, Countable
      */
     public function map(callable $fn): self
     {
+        /** @var self<TNew> */
         return new self($this->source, [...$this->operations, ['type' => 'map', 'fn' => $fn]]);
     }
 
@@ -105,6 +107,7 @@ class LazySequence implements IteratorAggregate, Countable
      */
     public function flatMap(callable $fn): self
     {
+        /** @var self<TNew> */
         return new self($this->source, [...$this->operations, ['type' => 'flatMap', 'fn' => $fn]]);
     }
 
@@ -171,6 +174,7 @@ class LazySequence implements IteratorAggregate, Countable
      */
     public function chunk(int $size): self
     {
+        /** @var self<Sequence<T>> */
         return new self($this->source, [...$this->operations, ['type' => 'chunk', 'arg' => $size]]);
     }
 
@@ -198,114 +202,229 @@ class LazySequence implements IteratorAggregate, Countable
     }
 
     /**
-     * Build and execute lazy pipeline
+     * Build and execute lazy pipeline.
+     *
+     * Cada operação vira um estágio de Generator encadeado: `take` interrompe
+     * o estágio dele (e, portanto, o consumo da fonte), `filter`/`flatMap`
+     * avançam os índices corretamente e valores `null` nunca são descartados.
      *
      * @return Generator<int, T>
      */
     private function buildPipeline(): Generator
     {
-        // Get source generator
-        $generator = $this->getSource();
+        $stream = $this->getSource();
 
-        // Apply operations lazily
+        foreach ($this->operations as $op) {
+            $stream = $this->applyOperation($op, $stream);
+        }
+
+        yield from $stream;
+    }
+
+    /**
+     * @param array{type: string, fn?: callable, arg?: mixed} $op
+     * @param Generator<int, mixed> $input
+     * @return Generator<int, mixed>
+     */
+    private function applyOperation(array $op, Generator $input): Generator
+    {
+        return match ($op['type']) {
+            'range' => $input, // tratado em getSource()
+            'map' => $this->stageMap($input, $op['fn']),
+            'filter' => $this->stageFilter($input, $op['fn']),
+            'flatMap' => $this->stageFlatMap($input, $op['fn']),
+            'take' => $this->stageTake($input, $op['arg']),
+            'skip' => $this->stageSkip($input, $op['arg']),
+            'slice' => $this->stageSlice($input, $op['arg'][0], $op['arg'][1]),
+            'unique' => $this->stageUnique($input),
+            'each' => $this->stageEach($input, $op['fn']),
+            'chunk' => $this->stageChunk($input, $op['arg']),
+            default => throw new \InvalidArgumentException("Unknown operation: {$op['type']}"),
+        };
+    }
+
+    /**
+     * @param Generator<int, mixed> $input
+     * @param callable $fn
+     * @return Generator<int, mixed>
+     */
+    private function stageMap(Generator $input, callable $fn): Generator
+    {
         $index = 0;
-        $skipped = 0;
-        $taken = 0;
-        $seen = [];
-        $takeLimit = null;
-        $skipCount = 0;
-        $sliceOffset = null;
-        $sliceLength = null;
-        $chunkSize = null;
-        $currentChunk = [];
+        foreach ($input as $value) {
+            yield $fn($value, $index++);
+        }
+    }
 
-        foreach ($generator as $value) {
-            // Apply transformations
-            foreach ($this->operations as $op) {
-                if ($value === null && $op['type'] !== 'skip' && $op['type'] !== 'take') {
-                    continue 2; // Skip to next source item
-                }
-
-                switch ($op['type']) {
-                    case 'map':
-                        $value = $op['fn']($value, $index);
-                        break;
-
-                    case 'filter':
-                        if (!$op['fn']($value, $index)) {
-                            continue 3; // Skip to next source item
-                        }
-                        break;
-
-                    case 'flatMap':
-                        foreach ($op['fn']($value, $index) as $flatValue) {
-                            yield $flatValue;
-                        }
-                        continue 3;
-
-                    case 'skip':
-                        $skipCount = $op['arg'];
-                        if ($skipped < $skipCount) {
-                            $skipped++;
-                            continue 3;
-                        }
-                        break;
-
-                    case 'take':
-                        $takeLimit = $op['arg'];
-                        if ($taken >= $takeLimit) {
-                            return; // Stop iteration
-                        }
-                        break;
-
-                    case 'slice':
-                        [$sliceOffset, $sliceLength] = $op['arg'];
-                        if ($index < $sliceOffset) {
-                            $index++;
-                            continue 3;
-                        }
-                        if ($sliceLength !== null && $index >= $sliceOffset + $sliceLength) {
-                            return;
-                        }
-                        break;
-
-                    case 'unique':
-                        $hash = serialize($value);
-                        if (in_array($hash, $seen, true)) {
-                            continue 3;
-                        }
-                        $seen[] = $hash;
-                        break;
-
-                    case 'each':
-                        $op['fn']($value, $index);
-                        break;
-
-                    case 'chunk':
-                        $chunkSize = $op['arg'];
-                        $currentChunk[] = $value;
-                        if (count($currentChunk) === $chunkSize) {
-                            yield Sequence::from($currentChunk);
-                            $currentChunk = [];
-                        }
-                        continue 3;
-                }
+    /**
+     * @param Generator<int, mixed> $input
+     * @param callable $fn
+     * @return Generator<int, mixed>
+     */
+    private function stageFilter(Generator $input, callable $fn): Generator
+    {
+        $index = 0;
+        foreach ($input as $value) {
+            if ($fn($value, $index++)) {
+                yield $value;
             }
+        }
+    }
 
-            // Yield transformed value
+    /**
+     * @param Generator<int, mixed> $input
+     * @param callable $fn
+     * @return Generator<int, mixed>
+     */
+    private function stageFlatMap(Generator $input, callable $fn): Generator
+    {
+        $index = 0;
+        foreach ($input as $value) {
+            foreach ($fn($value, $index++) as $flatValue) {
+                yield $flatValue;
+            }
+        }
+    }
+
+    /**
+     * @param Generator<int, mixed> $input
+     * @param int $limit
+     * @return Generator<int, mixed>
+     */
+    private function stageTake(Generator $input, int $limit): Generator
+    {
+        if ($limit <= 0) {
+            return;
+        }
+
+        $count = 0;
+        foreach ($input as $value) {
             yield $value;
-            $index++;
-            $taken++;
-
-            // Check take limit
-            if ($takeLimit !== null && $taken >= $takeLimit) {
+            if (++$count >= $limit) {
                 return;
             }
         }
+    }
 
-        // Yield remaining chunk
-        if ($chunkSize !== null && !empty($currentChunk)) {
-            yield Sequence::from($currentChunk);
+    /**
+     * @param Generator<int, mixed> $input
+     * @param int $count
+     * @return Generator<int, mixed>
+     */
+    private function stageSkip(Generator $input, int $count): Generator
+    {
+        $skipped = 0;
+        foreach ($input as $value) {
+            if ($skipped < $count) {
+                $skipped++;
+                continue;
+            }
+            yield $value;
+        }
+    }
+
+    /**
+     * @param Generator<int, mixed> $input
+     * @param int $offset
+     * @param int|null $length
+     * @return Generator<int, mixed>
+     */
+    private function stageSlice(Generator $input, int $offset, ?int $length): Generator
+    {
+        if ($offset < 0 || ($length !== null && $length < 0)) {
+            // Semantics of array_slice para valores negativos exigem a sequência completa
+            $items = iterator_to_array($input, false);
+
+            return (static function () use ($items, $offset, $length): Generator {
+                yield from array_slice($items, $offset, $length);
+            })();
+        }
+
+        return (static function () use ($input, $offset, $length): Generator {
+            $index = 0;
+            $yielded = 0;
+            foreach ($input as $value) {
+                if ($index++ < $offset) {
+                    continue;
+                }
+                if ($length !== null && $yielded >= $length) {
+                    return;
+                }
+                $yielded++;
+                yield $value;
+            }
+        })();
+    }
+
+    /**
+     * @param Generator<int, mixed> $input
+     * @return Generator<int, mixed>
+     */
+    private function stageUnique(Generator $input): Generator
+    {
+        $seen = [];
+        foreach ($input as $value) {
+            $hash = self::valueHash($value);
+            if (isset($seen[$hash])) {
+                continue;
+            }
+            $seen[$hash] = true;
+            yield $value;
+        }
+    }
+
+    /**
+     * @param Generator<int, mixed> $input
+     * @param callable $fn
+     * @return Generator<int, mixed>
+     */
+    private function stageEach(Generator $input, callable $fn): Generator
+    {
+        $index = 0;
+        foreach ($input as $value) {
+            $fn($value, $index++);
+            yield $value;
+        }
+    }
+
+    /**
+     * @param Generator<int, mixed> $input
+     * @param int $size
+     * @return Generator<int, Sequence<mixed>>
+     */
+    private function stageChunk(Generator $input, int $size): Generator
+    {
+        $chunk = [];
+        foreach ($input as $value) {
+            $chunk[] = $value;
+            if (count($chunk) === $size) {
+                yield Sequence::from($chunk);
+                $chunk = [];
+            }
+        }
+
+        if ($chunk !== []) {
+            yield Sequence::from($chunk);
+        }
+    }
+
+    /**
+     * Hash estável para unique(), seguro para Closures/resources.
+     *
+     * @param mixed $value
+     * @return string
+     */
+    private static function valueHash(mixed $value): string
+    {
+        try {
+            return serialize($value);
+        } catch (\Throwable) {
+            return match (true) {
+                is_object($value) => 'obj:' . get_class($value) . ':' . spl_object_id($value),
+                is_array($value) => 'arr:' . implode('|', array_map(self::valueHash(...), array_values($value))),
+                is_resource($value) => 'res:' . (int) $value,
+                default => get_debug_type($value) . ':' . var_export($value, true),
+            };
         }
     }
 
@@ -320,6 +439,9 @@ class LazySequence implements IteratorAggregate, Countable
         foreach ($this->operations as $op) {
             if ($op['type'] === 'range') {
                 [$start, $end, $step] = $op['arg'];
+                if ($step === 0) {
+                    throw new \InvalidArgumentException('Step must not be zero');
+                }
                 if ($step > 0) {
                     for ($i = $start; $i <= $end; $i += $step) {
                         yield $i;
@@ -351,6 +473,12 @@ class LazySequence implements IteratorAggregate, Countable
      */
     public static function from(iterable $iterable): self
     {
+        if ($iterable instanceof Generator) {
+            /** @var iterable<TValue> $reiterable */
+            $reiterable = new RewindableIterator($iterable);
+            return new self($reiterable);
+        }
+
         return new self($iterable);
     }
 
