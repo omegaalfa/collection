@@ -517,6 +517,15 @@ Emite apenas a primeira ocorrência de cada valor. A saída é lazy, mas a tabel
 $unique = $collection->lazyUnique();
 ```
 
+#### `lazyUniqueBy(callable $selector): Collection`
+<sup>lazy</sup>
+
+Remove duplicados usando uma chave calculada. Prefira esta variante quando o item for um array/objeto grande e possuir um identificador pequeno.
+
+```php
+$uniqueUsers = $users->lazyUniqueBy(fn(array $user): int => $user['id']);
+```
+
 ---
 
 #### `lazyPluck(string|int $key): Collection`
@@ -2710,7 +2719,7 @@ $data->lazyChunk(1000)->each(function($chunk) {
 ### Collection - 50+ métodos
 - **Criação:** `__construct`, `lazyRange`, `lazyObjects`
 - **Transformações Eager:** `map`, `filter`, `unique`, `reverse`, `chunk`, `sort`, `sortKeys`
-- **Transformações Lazy:** `lazyMap`, `lazyFilter`, `lazyChunk`, `lazyTake`, `lazySlice`, `lazyUnique`, `lazyPluck`, `lazyPipeline`, `lazy`
+- **Transformações Lazy:** `lazyMap`, `lazyFilter`, `lazyChunk`, `lazyTake`, `lazySlice`, `lazyUnique`, `lazyUniqueBy`, `lazyPluck`, `lazyPipeline`, `lazy`
 - **Acesso:** `first`, `last`, `current`, `contains`, `pluck`
 - **Agregação:** `count`, `sum`, `avg`, `min`, `max`, `reduce`
 - **Slicing:** `take`, `slice`

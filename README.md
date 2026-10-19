@@ -670,7 +670,7 @@ Core Classes/
 ├── Collection             # Hybrid: Eager + Lazy operations
 ├── Sequence              # Immutable ordered list
 ├── Map                   # Immutable key-value map
-├── LazySequence          # Generator-based lazy sequence
+├── LazySequence          # Generator-based lazy sequence (uniqueBy)
 └── LazyMap               # Lazy-evaluated map (Closures)
 
 Utilities/

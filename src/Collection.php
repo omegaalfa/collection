@@ -103,7 +103,7 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
      */
     public static function lazy(callable $callback): Collection
     {
-        return new self($callback());
+        return new self(new RegenerableIterator($callback));
     }
 
     /**
@@ -132,7 +132,7 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
             }
         };
 
-        return new self($generator());
+        return new self(new RegenerableIterator($generator));
     }
 
     /**
@@ -170,7 +170,7 @@ class Collection implements IteratorAggregate, Countable, ArrayAccess
         // Envolve o iterator para permitir reiteração (fontes one-shot,
         // como Generator, são memorizadas conforme são consumidas)
         if ($this->collection instanceof RegenerableIterator) {
-            return $this->collection;
+            return $this->collection->newIterator();
         }
 
         if (!$this->collection instanceof Generator) {

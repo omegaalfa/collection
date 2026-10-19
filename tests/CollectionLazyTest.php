@@ -225,6 +225,14 @@ class CollectionLazyTest extends TestCase
         $this->assertSame([2, 3], array_values(
             $collection->lazyUnique()->lazySlice(1, 2)->toArray()
         ));
+        $this->assertSame([1, 2, 3], array_values(
+            (new Collection([
+                ['id' => 1, 'value' => 'a'],
+                ['id' => 1, 'value' => 'b'],
+                ['id' => 2, 'value' => 'c'],
+                ['id' => 3, 'value' => 'd'],
+            ]))->lazyUniqueBy(fn(array $row): int => $row['id'])->lazyPluck('id')->toArray()
+        ));
         $this->assertSame([2, 3], array_values(
             $collection->lazyUnique()->lazySlice(1, 2)->toArray()
         ));

@@ -156,6 +156,21 @@ class LazySequence implements IteratorAggregate, Countable
     }
 
     /**
+     * Remove duplicados pela chave calculada, evitando serializar o valor
+     * completo quando a identidade do item é menor.
+     *
+     * @param callable(T, int): mixed $keyFn
+     * @return self<T>
+     */
+    public function uniqueBy(callable $keyFn): self
+    {
+        return new self($this->source, [
+            ...$this->operations,
+            ['type' => 'uniqueBy', 'fn' => $keyFn],
+        ]);
+    }
+
+    /**
      * Execute side effect for each element
      *
      * @param callable(T, int): void $fn
@@ -237,6 +252,7 @@ class LazySequence implements IteratorAggregate, Countable
             'skip' => $this->stageSkip($input, $op['arg']),
             'slice' => $this->stageSlice($input, $op['arg'][0], $op['arg'][1]),
             'unique' => $this->stageUnique($input),
+            'uniqueBy' => $this->stageUniqueBy($input, $op['fn']),
             'each' => $this->stageEach($input, $op['fn']),
             'chunk' => $this->stageChunk($input, $op['arg']),
             default => throw new \InvalidArgumentException("Unknown operation: {$op['type']}"),
@@ -378,6 +394,25 @@ class LazySequence implements IteratorAggregate, Countable
      * @param callable $fn
      * @return Generator<int, mixed>
      */
+    private function stageUniqueBy(Generator $input, callable $fn): Generator
+    {
+        $seen = [];
+        $index = 0;
+        foreach ($input as $value) {
+            $hash = self::valueHash($fn($value, $index++));
+            if (isset($seen[$hash])) {
+                continue;
+            }
+            $seen[$hash] = true;
+            yield $value;
+        }
+    }
+
+    /**
+     * @param Generator<int, mixed> $input
+     * @param callable $fn
+     * @return Generator<int, mixed>
+     */
     private function stageEach(Generator $input, callable $fn): Generator
     {
         $index = 0;
@@ -416,6 +451,19 @@ class LazySequence implements IteratorAggregate, Countable
      */
     private static function valueHash(mixed $value): string
     {
+        if (is_int($value)) {
+            return 'int:' . $value;
+        }
+        if (is_string($value)) {
+            return 'string:' . $value;
+        }
+        if (is_bool($value)) {
+            return 'bool:' . ($value ? '1' : '0');
+        }
+        if ($value === null) {
+            return 'null';
+        }
+
         try {
             return serialize($value);
         } catch (\Throwable) {

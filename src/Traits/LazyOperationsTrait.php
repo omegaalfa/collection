@@ -198,10 +198,24 @@ trait LazyOperationsTrait
      */
     public function lazyUnique(): self
     {
-        $generator = function () : Generator {
+        return $this->lazyUniqueBy(static fn(mixed $item): mixed => $item);
+    }
+
+    /**
+     * Remove duplicados usando uma chave compacta calculada pelo usuário.
+     * A chave deve ser escalar ou stringável; isso evita serializar o valor
+     * inteiro quando apenas um identificador define a unicidade.
+     *
+     * @param callable(TValue, TKey): mixed $selector
+     * @return self<TKey, TValue>
+     */
+    public function lazyUniqueBy(callable $selector): self
+    {
+        $generator = function () use ($selector): Generator {
             $seen = [];
             foreach ($this->getIterator() as $key => $item) {
-                $hash = $this->lazyValueHash($item);
+                $identity = $selector($item, $key);
+                $hash = $this->lazyValueHash($identity);
                 if (isset($seen[$hash])) {
                     continue;
                 }
@@ -241,6 +255,19 @@ trait LazyOperationsTrait
 
     private function lazyValueHash(mixed $value): string
     {
+        if (is_int($value)) {
+            return 'int:' . $value;
+        }
+        if (is_string($value)) {
+            return 'string:' . $value;
+        }
+        if (is_bool($value)) {
+            return 'bool:' . ($value ? '1' : '0');
+        }
+        if ($value === null) {
+            return 'null';
+        }
+
         try {
             return serialize($value);
         } catch (\Throwable) {

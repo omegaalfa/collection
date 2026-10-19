@@ -368,4 +368,18 @@ class LazySequenceTest extends TestCase
 		$this->assertSame(3, $sequence->count());
 		$this->assertSame([2, 4, 6], $sequence->toArray());
 	}
+
+	public function testUniqueByUsesAKeySelector(): void
+	{
+		$result = LazySequence::of(
+			['id' => 1, 'name' => 'a'],
+			['id' => 1, 'name' => 'b'],
+			['id' => 2, 'name' => 'c'],
+		)->uniqueBy(fn(array $row): int => $row['id'])->toArray();
+
+		$this->assertSame([
+			['id' => 1, 'name' => 'a'],
+			['id' => 2, 'name' => 'c'],
+		], $result);
+	}
 }

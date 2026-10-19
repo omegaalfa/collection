@@ -15,6 +15,16 @@ final class RegenerableIterator implements Iterator
     /** @param callable(): Iterator<TKey, TValue> $factory */
     public function __construct(private readonly mixed $factory) { }
 
+    /**
+     * Cria uma nova passagem independente sobre a mesma factory.
+     *
+     * @return self<TKey, TValue>
+     */
+    public function newIterator(): self
+    {
+        return new self($this->factory);
+    }
+
     public function rewind(): void
     {
         $source = ($this->factory)();
