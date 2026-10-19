@@ -6,6 +6,7 @@ namespace Omegaalfa\Collection\Traits;
 
 use Closure;
 use Generator;
+use Omegaalfa\Collection\Util\RegenerableIterator;
 
 /**
  * Trait para operações lazy (avaliação preguiçosa)
@@ -30,7 +31,7 @@ trait LazyOperationsTrait
             }
         };
 
-        return new self($generator());
+        return new self(new RegenerableIterator($generator));
     }
 
     /**
@@ -49,7 +50,7 @@ trait LazyOperationsTrait
             }
         };
 
-        return new self($generator());
+        return new self(new RegenerableIterator($generator));
     }
 
     /**
@@ -60,9 +61,27 @@ trait LazyOperationsTrait
      */
     public function lazyPipeline(array $operations): self
     {
-        $iterator = $this->getIterator();
-
         foreach ($operations as $operation) {
+            if (is_array($operation) && count($operation) === 2) {
+                [$method, $param] = $operation;
+                if (($method === 'take' || $method === 'skip') && !is_int($param)) {
+                    throw new \InvalidArgumentException("Parameter for '{$method}' must be an integer");
+                }
+                if ($method !== 'take' && $method !== 'skip' && !is_callable($param)) {
+                    throw new \InvalidArgumentException("Second array member must be callable for method '{$method}'");
+                }
+                if (!in_array($method, ['map', 'filter', 'take', 'skip'], true)) {
+                    throw new \InvalidArgumentException("Unknown operation: {$method}");
+                }
+            } elseif (!is_callable($operation)) {
+                throw new \InvalidArgumentException('Invalid operation format');
+            }
+        }
+
+        $factory = function () use ($operations): Generator {
+            $iterator = $this->getIterator();
+
+            foreach ($operations as $operation) {
             if (is_array($operation) && count($operation) === 2) {
                 [$method, $param] = $operation;
 
@@ -90,13 +109,15 @@ trait LazyOperationsTrait
                         }
                     },
                     'take' => static function () use ($iterator, $param): Generator {
+                        if ($param <= 0) {
+                            return;
+                        }
                         $count = 0;
                         foreach ($iterator as $key => $item) {
-                            if ($count >= $param) {
-                                break;
-                            }
                             yield $key => $item;
-                            $count++;
+                            if (++$count >= $param) {
+                                return;
+                            }
                         }
                     },
                     'skip' => static function () use ($iterator, $param): Generator {
@@ -127,9 +148,106 @@ trait LazyOperationsTrait
             } else {
                 throw new \InvalidArgumentException("Invalid operation format");
             }
+            }
+
+            yield from $iterator;
+        };
+
+        return new self(new RegenerableIterator($factory));
+    }
+
+    /**
+     * Slice lazy para offsets não negativos. Offsets negativos mantêm a
+     * semântica de slice() e exigem materialização da fonte.
+     *
+     * @param int $offset
+     * @param int|null $length
+     * @return self<TKey, TValue>
+     */
+    public function lazySlice(int $offset, ?int $length = null): self
+    {
+        if ($offset < 0 || ($length !== null && $length < 0)) {
+            return $this->slice($offset, $length);
         }
 
-        return new self($iterator);
+        $generator = function () use ($offset, $length): Generator {
+            $index = 0;
+            $yielded = 0;
+            foreach ($this->getIterator() as $key => $item) {
+                if ($index++ < $offset) {
+                    continue;
+                }
+                if ($length !== null && $yielded >= $length) {
+                    break;
+                }
+                yield $key => $item;
+                if (++$yielded >= $length && $length !== null) {
+                    return;
+                }
+            }
+        };
+
+        return new self(new RegenerableIterator($generator));
+    }
+
+    /**
+     * Remove duplicados sem materializar a coleção resultante.
+     * A tabela de chaves vistas continua sendo O(n), como em unique().
+     *
+     * @return self<TKey, TValue>
+     */
+    public function lazyUnique(): self
+    {
+        $generator = function () : Generator {
+            $seen = [];
+            foreach ($this->getIterator() as $key => $item) {
+                $hash = $this->lazyValueHash($item);
+                if (isset($seen[$hash])) {
+                    continue;
+                }
+                $seen[$hash] = true;
+                yield $key => $item;
+            }
+        };
+
+        return new self(new RegenerableIterator($generator));
+    }
+
+    /**
+     * Extrai uma chave de arrays/objetos sob demanda.
+     *
+     * @param string|int $key
+     * @return self<int, mixed>
+     */
+    public function lazyPluck(string|int $key): self
+    {
+        $generator = function () use ($key): Generator {
+            foreach ($this->getIterator() as $item) {
+                if (is_array($item) && array_key_exists($key, $item)) {
+                    yield $item[$key];
+                    continue;
+                }
+                if (is_object($item)) {
+                    $vars = get_object_vars($item);
+                    if (array_key_exists($key, $vars)) {
+                        yield $vars[$key];
+                    }
+                }
+            }
+        };
+
+        return new self(new RegenerableIterator($generator));
+    }
+
+    private function lazyValueHash(mixed $value): string
+    {
+        try {
+            return serialize($value);
+        } catch (\Throwable) {
+            return is_object($value)
+                ? 'object:' . get_class($value) . ':' . spl_object_id($value)
+                : get_debug_type($value) . ':' . var_export($value, true);
+        }
     }
 
     /**
@@ -164,7 +282,7 @@ trait LazyOperationsTrait
             }
         };
 
-        return new self($generator());
+        return new self(new RegenerableIterator($generator));
     }
 
     /**
@@ -181,17 +299,19 @@ trait LazyOperationsTrait
         }
 
         $generator = function () use ($limit): Generator {
+            if ($limit <= 0) {
+                return;
+            }
             $count = 0;
             foreach ($this->getIterator() as $key => $item) {
-                if ($count >= $limit) {
-                    break;
-                }
                 yield $key => $item;
-                $count++;
+                if (++$count >= $limit) {
+                    return;
+                }
             }
         };
 
-        return new self($generator());
+        return new self(new RegenerableIterator($generator));
     }
 
     /**
@@ -199,7 +319,7 @@ trait LazyOperationsTrait
      * Os objetos só são instanciados quando acessados
      *
      * @template TObject of object
-     * @param array<TKey, Closure(): TObject> $factories Array de factories para criar objetos
+     * @param array<TKey, callable(): TObject> $factories Array de factories para criar objetos
      * @return self<TKey, TObject>
      */
     public function lazyObjects(array $factories): self
@@ -212,21 +332,42 @@ trait LazyOperationsTrait
                 $factory = Closure::fromCallable($factory);
             }
 
-            // Determina a classe do objeto a partir do primeiro objeto criado
-            $tempObject = $factory();
-            $className = get_class($tempObject);
-            unset($tempObject);
+            $className = $this->resolveFactoryClass($factory);
 
             try {
                 $lazyProxy = new \Omegaalfa\Collection\Util\LazyProxyObject($className);
                 $lazyObjects[$key] = $lazyProxy->lazyProxy($factory);
-            } catch (\ReflectionException $e) {
-                // Fallback: usa o factory diretamente
+            } catch (\ReflectionException) {
+                // Fallback: classe não suporta lazy objects — instancia direto
                 $lazyObjects[$key] = $factory();
             }
         }
 
+        /** @var self<TKey, TObject> */
         return new self($lazyObjects);
+    }
+
+    /**
+     * Determina a classe de retorno do factory sem instanciar o objeto.
+     * Só recorre à instanciação temporária quando o tipo de retorno é desconhecido.
+     *
+     * @param Closure $factory
+     * @return class-string
+     */
+    private function resolveFactoryClass(Closure $factory): string
+    {
+        $returnType = (new \ReflectionFunction($factory))->getReturnType();
+
+        if ($returnType instanceof \ReflectionNamedType && !$returnType->isBuiltin()) {
+            return $returnType->getName();
+        }
+
+        // Fallback: instancia temporariamente para descobrir a classe
+        $tempObject = $factory();
+        $className = get_class($tempObject);
+        unset($tempObject);
+
+        return $className;
     }
 
     /**
@@ -236,7 +377,7 @@ trait LazyOperationsTrait
      */
     public function isLazy(): bool
     {
-        return $this->collection instanceof Generator;
+        return $this->collection instanceof Generator || $this->collection instanceof RegenerableIterator;
     }
 
     /**

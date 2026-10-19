@@ -322,6 +322,44 @@ $filtered = $collection->lazyFilter(fn($obj) => $obj->active);
 
 </details>
 
+### 📊 DataFrame - Pandas-style Tabular Operations
+
+<details>
+<summary><strong>Click to expand</strong></summary>
+
+```php
+use Omegaalfa\Collection\DataFrame;
+
+// 📄 From CSV (lazy streaming), arrays, JSON Lines or Sequence
+$df = DataFrame::fromCsv('sales.csv');
+
+// 🔍 Chain lazy transforms — nothing is evaluated yet
+$result = $df
+    ->where(fn(array $row) => (int) $row['qty'] > 10)
+    ->withColumn('total', fn(array $row) => (int) $row['qty'] * (float) $row['price'])
+    ->select('id', 'region', 'total')
+    ->head(100); // terminal: evaluates at most 100 rows
+
+// 📈 Group By & aggregations
+foreach ($df->groupBy('region') as $region => $group) {
+    echo "{$region}: ", $group->sum('total'), "\n";
+}
+
+// Uma passagem para várias estatísticas
+$stats = $df->describe('total');
+
+// Reutilizar a fonte em vários terminais (troca I/O por memória)
+$cached = $df->cached();
+
+// 💾 Export
+$df->toCsv('out.csv');
+$df->toJson();
+```
+
+> 📘 **[Complete DataFrame Guide](docs/DataFrame.md)** — every method documented with examples.
+
+</details>
+
 ---
 
 ## 🎯 Choosing the Right Class
@@ -367,6 +405,12 @@ $filtered = $collection->lazyFilter(fn($obj) => $obj->active);
 - ✅ Processing large JSON line files
 - ✅ Cannot load entire file in memory
 - ✅ Streaming data processing
+
+### Use **DataFrame** 📊
+- ✅ Tabular data (rows & columns, like pandas)
+- ✅ CSV / JSON Lines analytics pipelines
+- ✅ Group-by, aggregations and export
+- ✅ Lazy transforms over large files
 
 </td>
 </tr>
@@ -556,6 +600,7 @@ composer phpstan
 
 ### 📘 Core Documentation
 - [Complete API Reference](docs/API.md)
+- [DataFrame Guide](docs/DataFrame.md)
 - [LazyFileIterator Guide](docs/LazyFileIterator_README.md)
 - [Performance Profiling](docs/PROFILING_ANALYSIS.md)
 
@@ -630,7 +675,9 @@ Core Classes/
 
 Utilities/
 ├── LazyProxyObject       # PHP 8.4+ lazy object proxies
-└── LazyFileIterator      # Stream large files efficiently
+├── LazyFileIterator      # Stream large files efficiently
+├── RewindableIterator    # Replay one-shot iterators on demand
+└── RegenerableIterator   # Rebuild lazy pipelines without buffering
 
 File Parsers/
 ├── ParserInterface

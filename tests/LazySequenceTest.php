@@ -355,4 +355,17 @@ class LazySequenceTest extends TestCase
 		$this->assertCount(100, $result);
 		$this->assertLessThan(0.1, $duration); // Should be very fast (< 100ms)
 	}
+
+	public function testGeneratorSourceCanBeReusedByMultipleTerminals(): void
+	{
+		$source = (function (): \Generator {
+			yield 1;
+			yield 2;
+			yield 3;
+		})();
+		$sequence = LazySequence::from($source)->map(fn(int $value): int => $value * 2);
+
+		$this->assertSame(3, $sequence->count());
+		$this->assertSame([2, 4, 6], $sequence->toArray());
+	}
 }

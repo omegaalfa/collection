@@ -30,8 +30,9 @@ class CollectionCoverageTest extends TestCase
 			yield 'a' => 1;
 		};
 		$collection = new Collection($generator());
-		// getAttribute retorna null para iteradores que não são arrays
-		$this->assertNull($collection->getAttribute('a'));
+		// getAttribute funciona também para iteradores
+		$this->assertEquals(1, $collection->getAttribute('a'));
+		$this->assertNull($collection->getAttribute('missing'));
 	}
 
 	public function testAddWithIterator(): void
@@ -42,8 +43,8 @@ class CollectionCoverageTest extends TestCase
 		};
 		$collection = new Collection($generator());
 		$collection->add(3);
-		// Após add, o iterator deve ter sido convertido para array
-		$this->assertEquals([1, 2], $collection->toArray());
+		// Após add, o iterator é convertido para array e o item é adicionado
+		$this->assertEquals([1, 2, 3], $collection->toArray());
 	}
 
 	public function testSetAttributeWithIterator(): void
@@ -52,9 +53,9 @@ class CollectionCoverageTest extends TestCase
 			yield 'a' => 1;
 		};
 		$collection = new Collection($generator());
-		// setAttribute não faz nada em iteradores
+		// setAttribute materializa o iterator e grava o valor
 		$collection->setAttribute('b', 2);
-		$this->assertEquals(['a' => 1], $collection->toArray());
+		$this->assertEquals(['a' => 1, 'b' => 2], $collection->toArray());
 	}
 
 	// Testes para aumentar cobertura do CollectionTransformationsTrait

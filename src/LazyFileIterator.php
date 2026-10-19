@@ -6,7 +6,6 @@ namespace Omegaalfa\Collection;
 
 use Closure;
 use Iterator;
-use JsonException;
 use Omegaalfa\Collection\FileParser\CsvParser;
 use Omegaalfa\Collection\FileParser\JsonLinesParser;
 use Omegaalfa\Collection\FileParser\ParserInterface;
@@ -16,7 +15,7 @@ use RuntimeException;
 use SplFileObject;
 
 /**
- * @implements Iterator<mixed>
+ * @implements Iterator<int, mixed>
  */
 class LazyFileIterator implements Iterator
 {
@@ -29,6 +28,15 @@ class LazyFileIterator implements Iterator
      * @var string
      */
     private string $line = '';
+
+    /**
+     * Valor parseado da linha corrente (null = linha ainda não processada)
+     */
+    private mixed $currentParsed = null;
+
+    private bool $hasCurrent = false;
+
+    private bool $firstRead = true;
 
     /**
      * @var SplFileObject
@@ -95,6 +103,9 @@ class LazyFileIterator implements Iterator
      * @param string $enclosure Field enclosure
      * @param string $escape Escape character
      * @param bool $hasHeaders First line is header
+     *
+     * @return self
+     *
      */
     public static function csv(
         string $filePath,
@@ -133,14 +144,112 @@ class LazyFileIterator implements Iterator
 
     /**
      * @return mixed
-     * @throws JsonException
      */
     public function current(): mixed
     {
-        if (empty($this->line)) {
-            return null;
+        return $this->currentParsed;
+    }
+
+    /**
+     * @return void
+     */
+    public function next(): void
+    {
+        $this->advanceToData();
+    }
+
+    /**
+     * @return bool
+     */
+    public function valid(): bool
+    {
+        return $this->hasCurrent;
+    }
+
+    /**
+     * @return int
+     */
+    public function key(): int
+    {
+        return $this->pointer;
+    }
+
+    /**
+     * @return void
+     */
+    public function rewind(): void
+    {
+        $this->pointer = 0;
+        $this->firstRead = true;
+        $this->hasCurrent = false;
+        $this->currentParsed = null;
+        $this->file->rewind();
+
+        // Reset parser state if needed (e.g., CSV headers)
+        if ($this->parser instanceof ParserInterface) {
+            $this->parser->reset();
         }
 
+        $this->advanceToData();
+    }
+
+    /**
+     * Avança para a próxima linha com dados.
+     *
+     * Linhas em branco são ignoradas. Um parse que retorna null indica
+     * "sem dados" (ex.: linha de header do CSV) e também é ignorado.
+     * O valor "0" é um dado válido e nunca deve ser descartado.
+     */
+    private function advanceToData(): void
+    {
+        while (true) {
+            // SplFileObject lança exceção se fgets() for chamado após o EOF;
+            // no EOF ele retorna '' uma única vez, por isso os dois guardas
+            if (!$this->file->valid()) {
+                $this->endOfData();
+                return;
+            }
+
+            $str = $this->file->fgets();
+
+            // EOF: false (PHP 8.4) ou '' (PHP 8.5+); "0" é dado válido
+            if (strlen((string) $str) === 0) {
+                $this->endOfData();
+                return;
+            }
+
+            if (!$this->firstRead) {
+                $this->pointer++;
+            }
+            $this->firstRead = false;
+
+            $line = rtrim((string) $str, "\r\n");
+            if ($line === '') {
+                continue;
+            }
+
+            $this->line = $line;
+            $parsed = $this->parseLine();
+
+            if ($parsed === null) {
+                continue;
+            }
+
+            $this->currentParsed = $parsed;
+            $this->hasCurrent = true;
+            return;
+        }
+    }
+
+    private function endOfData(): void
+    {
+        $this->line = '';
+        $this->currentParsed = null;
+        $this->hasCurrent = false;
+    }
+
+    private function parseLine(): mixed
+    {
         try {
             if ($this->parser instanceof Closure) {
                 return ($this->parser)($this->line, $this->pointer);
@@ -159,65 +268,5 @@ class LazyFileIterator implements Iterator
                 $e
             );
         }
-    }
-
-    /**
-     * @return void
-     */
-    public function next(): void
-    {
-        do {
-            if ($this->file->valid() && $str = $this->file->fgets()) {
-                $this->line = trim($str);
-                $this->pointer++;
-                continue;
-            }
-
-            $this->line = '';
-            break;
-        } while (empty($this->line) && !$this->file->eof());
-    }
-
-    /**
-     * @return bool
-     */
-    public function valid(): bool
-    {
-        return !empty($this->line);
-    }
-
-    /**
-     * @return int
-     */
-    public function key(): int
-    {
-        return $this->pointer;
-    }
-
-    /**
-     * @return void
-     */
-    public function rewind(): void
-    {
-        $this->pointer = 0;
-        $this->file->rewind();
-
-        // Reset parser state if needed (e.g., CSV headers)
-        if ($this->parser instanceof ParserInterface) {
-            $this->parser->reset();
-        }
-
-        // Read first non-empty line
-        do {
-            $str = $this->file->fgets();
-
-            if ($str === false) {
-                $this->line = '';
-                break;
-            }
-
-            $this->line = trim($str);
-
-        } while (empty($this->line) && !$this->file->eof());
     }
 }

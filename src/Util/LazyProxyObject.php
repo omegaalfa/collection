@@ -15,40 +15,40 @@ use ReflectionException;
  */
 class LazyProxyObject
 {
-	/**
-	 * @var ReflectionClass<T>
-	 */
-	protected ReflectionClass $class;
+    /**
+     * @var ReflectionClass<T>
+     */
+    protected ReflectionClass $class;
 
-	/**
-	 * @param class-string<T> $class
-	 * @throws ReflectionException
-	 */
-	public function __construct(string $class)
-	{
-		$this->class = new ReflectionClass($class);
-	}
+    /**
+     * @param class-string<T> $class
+     * @throws ReflectionException
+     */
+    public function __construct(string $class)
+    {
+        $this->class = new ReflectionClass($class);
+    }
 
 
-	/**
-	 * Create a lazy proxy that initializes on first method call
-	 * 
-	 * @param Closure(): T $factory
-	 * @return object
-	 */
-	public function lazyProxy(Closure $factory): object
-	{
-		return $this->class->newLazyProxy($factory);
-	}
+    /**
+     * Create a lazy proxy that initializes on first method call
+     * 
+     * @param Closure(): T $factory
+     * @return object
+     */
+    public function lazyProxy(Closure $factory): object
+    {
+        return $this->class->newLazyProxy($factory);
+    }
 
-	/**
-	 * Create a lazy ghost that initializes on first property access
-	 * 
-	 * @param Closure(T): void $factory
-	 * @return object
-	 */
-	public function lazyGhost(Closure $factory): object
-	{
-		return $this->class->newLazyGhost($factory);
-	}
+    /**
+     * Create a lazy ghost that initializes on first property access
+     * 
+     * @param Closure(T): void $factory
+     * @return object
+     */
+    public function lazyGhost(Closure $factory): object
+    {
+        return $this->class->newLazyGhost($factory);
+    }
 }

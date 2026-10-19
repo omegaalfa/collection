@@ -9,11 +9,13 @@ use JsonException;
 class JsonLinesParser implements ParserInterface
 {
     /**
+     * Decodifica como arrays associativos para consistência com Csv/Tsv
+     *
      * @throws JsonException
      */
     public function parse(string $line, int $lineNumber): mixed
     {
-        return json_decode($line, false, 512, JSON_THROW_ON_ERROR);
+        return json_decode($line, true, 512, JSON_THROW_ON_ERROR);
     }
 
     public function reset(): void

@@ -68,12 +68,12 @@ class LazyMap implements IteratorAggregate, Countable
     /**
      * Create lazy map with lazy object proxies using LazyProxyObject (PHP 8.4+)
      * Perfect for expensive object instantiation (DB queries, API calls, etc)
-     * 
+     *
      * @template K of array-key
      * @template V of object
-     * @param array<K, array{class-string<V>, ...mixed}> $specs Key => [ClassName, ...constructorArgs]
+     * @param array<K, array{class-string<V>, ...}> $specs Key => [ClassName, ...constructorArgs]
      * @return self<K, V>
-     * 
+     *
      * @example
      * $users = LazyMap::ofLazyObjects([
      *     'john' => [User::class, 'john', 'john@example.com'],
@@ -84,11 +84,10 @@ class LazyMap implements IteratorAggregate, Countable
     public static function ofLazyObjects(array $specs): self
     {
         $items = [];
-        
+
         foreach ($specs as $key => $spec) {
-            $className = array_shift($spec);
-            $args = $spec;
-            
+            [$className, $args] = self::parseObjectSpec($spec);
+
             try {
                 $proxy = new LazyProxyObject($className);
                 $items[$key] = $proxy->lazyProxy(fn() => new $className(...$args));
@@ -97,8 +96,29 @@ class LazyMap implements IteratorAggregate, Countable
                 $items[$key] = fn() => new $className(...$args);
             }
         }
-        
+
+        /** @var self<K, V> */
         return new self($items);
+    }
+
+    /**
+     * Valida e normaliza um spec [ClassName, ...args] em runtime
+     *
+     * @param mixed $spec
+     * @return array{class-string, list<mixed>} [className, args]
+     */
+    private static function parseObjectSpec(mixed $spec): array
+    {
+        if (!is_array($spec) || $spec === []) {
+            throw new \InvalidArgumentException('Each spec must be a non-empty array [ClassName, ...args]');
+        }
+
+        $className = array_shift($spec);
+        if (!is_string($className) || !class_exists($className)) {
+            throw new \InvalidArgumentException('Spec must start with a valid class name');
+        }
+
+        return [$className, array_values($spec)];
     }
 
     /**
@@ -107,7 +127,7 @@ class LazyMap implements IteratorAggregate, Countable
      * 
      * @template K of array-key
      * @template V of object
-     * @param array<K, array{class-string<V>, Closure(): V}> $specs Key => [ClassName, Factory]
+     * @param array<K, array{class-string<V>, callable(): V}> $specs Key => [ClassName, Factory]
      * @return self<K, V>
      * 
      * @example
@@ -135,7 +155,8 @@ class LazyMap implements IteratorAggregate, Countable
                 $items[$key] = $factory;
             }
         }
-        
+
+        /** @var self<K, V> */
         return new self($items);
     }
 
@@ -199,7 +220,10 @@ class LazyMap implements IteratorAggregate, Countable
      */
     public function put(mixed $key, mixed $value): self
     {
-        return new self([...$this->items, $key => $value]);
+        // array_replace preserva chaves inteiras (spread as renumera)
+        $items = array_replace($this->items, [$key => $value]);
+
+        return new self($items);
     }
 
     /**
@@ -210,7 +234,7 @@ class LazyMap implements IteratorAggregate, Countable
      */
     public function putAll(array $items): self
     {
-        return new self([...$this->items, ...$items]);
+        return new self(array_replace($this->items, $items));
     }
 
     /**
@@ -234,7 +258,8 @@ class LazyMap implements IteratorAggregate, Countable
      */
     public function merge(self $other): self
     {
-        return new self([...$this->items, ...$other->items]);
+        // array_replace preserva chaves inteiras (spread as renumera)
+        return new self(array_replace($this->items, $other->items));
     }
 
     /**
@@ -408,7 +433,7 @@ class LazyMap implements IteratorAggregate, Countable
     /**
      * Get all values (materializes all!)
      *
-     * @return Sequence<TValue>
+     * @return Sequence<TValue|null>
      */
     public function values(): Sequence
     {
@@ -416,6 +441,7 @@ class LazyMap implements IteratorAggregate, Countable
         foreach ($this->items as $key => $value) {
             $values[] = $this->get($key);
         }
+        /** @var Sequence<TValue|null> */
         return Sequence::from($values);
     }
 
@@ -502,7 +528,7 @@ class LazyMap implements IteratorAggregate, Countable
     /**
      * Convert values to sequence (materializes all!)
      *
-     * @return LazySequence<TValue>
+     * @return LazySequence<TValue|null>
      */
     public function toSequence(): LazySequence
     {
@@ -510,6 +536,7 @@ class LazyMap implements IteratorAggregate, Countable
         foreach ($this->items as $key => $value) {
             $values[] = $this->get($key);
         }
+        /** @var LazySequence<TValue|null> */
         return LazySequence::from($values);
     }
 
